@@ -206,7 +206,7 @@ export default function App() {
                     <div className="space-y-3">
                       <div><p className="text-xs font-mono text-cyan-300">{roll.id}</p><h3 className="text-base font-bold text-white">{roll.material}</h3></div>
                       <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
-                      <div className={`h-full ${percentage < 20 ? 'bg-rose-500' : 'bg-cyan-500'}`} style={{ width: `${percentage}%` }}></div>
+                        <div className={`h-full ${percentage < 20 ? 'bg-rose-500' : 'bg-cyan-500'}`} style={{ width: `${percentage}%` }}></div>
                       </div>
                     </div>
                   ) : <div className="py-10 text-center text-slate-600 text-xs">Empty Bay</div>}
