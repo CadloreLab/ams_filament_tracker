@@ -323,7 +323,6 @@ export default function App() {
   // --- Real-time Firestore Sync with LocalStorage Fallback ---
   useEffect(() => {
     if (!db) {
-      // Fallback to localStorage if firebase fails to load
       try {
         const s = localStorage.getItem('fallback_spools');
         if (s) setSpools(JSON.parse(s));
@@ -973,6 +972,10 @@ export default function App() {
                           {req.status === 'APPROVED' && currentUser.isAdmin && (
                             <button
                               onClick={async () => {
+                                if (req.status === 'WAITING_APPROVAL') {
+                                  showToast('Cannot accept: waiting for spool owner approval!', 'error');
+                                  return;
+                                }
                                 if (db) {
                                   await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true }).catch(() => {});
                                 }
@@ -1303,6 +1306,42 @@ export default function App() {
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loadSlotModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+          <div className="bg-zinc-900 border border-amber-500/50 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
+              <span className="font-extrabold text-sm text-white uppercase">Load Spool into Slot {loadSlotModal.slot}</span>
+              <button onClick={() => setLoadSlotModal(null)} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-4 overflow-y-auto space-y-3">
+              <p className="text-xs text-zinc-400">Scan any spool barcode with your Zebra scanner, or pick an existing spool below:</p>
+              {spools.filter(s => !s.amsSlot).length === 0 ? (
+                <p className="text-xs text-zinc-500 italic py-4 text-center">No available spools in storage. Register a new spool or scan a barcode.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {spools.filter(s => !s.amsSlot).map(sp => (
+                    <button
+                      key={sp.id}
+                      onClick={() => loadSpoolIntoSlot(sp.id, loadSlotModal.slot)}
+                      className="w-full p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-amber-500 text-left flex items-center justify-between transition"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: sp.colorHex }} />
+                        <div className="min-w-0 text-xs">
+                          <div className="font-bold text-white truncate">{sp.material} ({sp.colorName})</div>
+                          <div className="font-mono text-[10px] text-zinc-400">{sp.barcode}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono text-emerald-400 font-bold shrink-0">{sp.remainingWeight}g</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1655,7 +1694,7 @@ function CompleteRequestModal({ request, spools, onClose, onComplete }) {
   );
 }
 
-function SpoolFormModal({ modalData, owners, onClose, onSave, onDelete }) {
+function SpoolFormModal({ modalData, owners, onClose, spools, onSave, onDelete }) {
   const [form, setForm] = useState(modalData.spool);
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
