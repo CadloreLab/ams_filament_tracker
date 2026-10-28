@@ -42,14 +42,14 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// OFFICIAL BAMBU LAB STORE CATALOG (MATERIALS & COLOR SWATCHES)
+// COMPREHENSIVE OFFICIAL BAMBU LAB STORE CATALOG
 // ============================================================================
 
 const MATERIALS = [
   'PLA Basic',
   'PLA Matte',
   'PLA Tough+',
-  'PLA Silk',
+  'PLA Silk+',
   'PLA Silk Multi-Color',
   'PLA Sparkle',
   'PLA Galaxy',
@@ -58,57 +58,81 @@ const MATERIALS = [
   'PLA Translucent',
   'PLA Glow',
   'PLA Aero',
+  'PLA Pure',
+  'PLA Wood',
   'PLA-CF',
   'PETG Basic',
   'PETG HF',
   'PETG Translucent',
   'PETG-CF',
-  'ABS',
+  'ABS Basic',
   'ABS-CF',
-  'ASA',
+  'ABS-GF',
+  'ASA Basic',
+  'ASA-CF',
+  'ASA Aero',
   'TPU 95A',
   'TPU 95A HF',
   'TPU 94A',
-  'PC',
+  'PC Basic',
+  'PC-FR',
   'PAHT-CF',
   'PA6-CF',
+  'PA6-GF',
   'PPA-CF',
   'PPA-GF',
   'PPS',
   'PVA',
+  'HIPS Support',
   'Support G',
-  'Support W'
+  'Support W',
+  'Support for PA/PET'
 ];
 
 const FILAMENT_COLORS = [
   { name: 'Jade White', hex: '#F8FAFC' },
   { name: 'Cloud White', hex: '#F1F5F9' },
+  { name: 'White', hex: '#FFFFFF' },
   { name: 'Charcoal Black', hex: '#1E293B' },
   { name: 'Onyx Black', hex: '#09090B' },
+  { name: 'Black', hex: '#000000' },
   { name: 'Bambu Green', hex: '#00AE42' },
   { name: 'Lawn Green', hex: '#22C55E' },
+  { name: 'Green', hex: '#61BF36' },
+  { name: 'Olive', hex: '#789D4A' },
+  { name: 'Lime', hex: '#C5ED48' },
+  { name: 'Neon Green Glow', hex: '#4ADE80' },
   { name: 'Fire Engine Red', hex: '#EF4444' },
   { name: 'Crimson Red', hex: '#DC2626' },
+  { name: 'Red', hex: '#E83100' },
+  { name: 'Magenta Pop', hex: '#EC4899' },
+  { name: 'Sakura Pink', hex: '#F472B6' },
+  { name: 'Neon Pink Glow', hex: '#F43F5E' },
   { name: 'Mandarin Orange', hex: '#F97316' },
+  { name: 'Orange', hex: '#FF6A13' },
   { name: 'Sunflower Yellow', hex: '#EAB308' },
   { name: 'Lemon Yellow', hex: '#FACC15' },
+  { name: 'Tangerine Yellow', hex: '#FFC72C' },
+  { name: 'Yellow', hex: '#FFE133' },
   { name: 'Cobalt Blue', hex: '#2563EB' },
   { name: 'Cyan Tough', hex: '#06B6D4' },
   { name: 'Azure Blue', hex: '#489FDF' },
   { name: 'Navy Blue', hex: '#1E3A8A' },
+  { name: 'Blue', hex: '#0A2CA5' },
   { name: 'Galaxy Purple', hex: '#9333EA' },
   { name: 'Lilac Purple', hex: '#C084FC' },
-  { name: 'Magenta Pop', hex: '#EC4899' },
-  { name: 'Sakura Pink', hex: '#F472B6' },
+  { name: 'Purple', hex: '#AF1685' },
   { name: 'Titanium Grey', hex: '#64748B' },
   { name: 'Silver Metallic', hex: '#94A3B8' },
+  { name: 'Gray', hex: '#8E9089' },
+  { name: 'Carbon Matte', hex: '#27272A' },
   { name: 'Bronze Metallic', hex: '#B45309' },
   { name: 'Gold Metallic', hex: '#D97706' },
   { name: 'Desert Tan', hex: '#D6B88D' },
-  { name: 'Carbon Matte', hex: '#27272A' },
+  { name: 'Beige', hex: '#DFD1A7' },
   { name: 'Transparent Clear', hex: '#E2E8F0' },
-  { name: 'Neon Green Glow', hex: '#4ADE80' },
-  { name: 'Neon Pink Glow', hex: '#F43F5E' }
+  { name: 'Clear Black', hex: '#5A5161' },
+  { name: 'Support Green/Yellow', hex: '#C0DF16' }
 ];
 
 const OWNER_COLORS = [
@@ -860,7 +884,7 @@ export default function App() {
                   <button onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }} className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow">
                     <PackagePlus className="w-4 h-4" /> Batch Scan 29 Rolls
                   </button>
-                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White', colorHex: '#F8FAFC', brand: 'Bambu Lab', ownerId: currentUser?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
+                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White', colorHex: '#F8FAFC', brand: 'Bambu Lab', ownerId: currentUser?.id || owners[0]?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
                     <Plus className="w-4 h-4 text-amber-400" /> New Spool
                   </button>
                 </div>
@@ -1078,19 +1102,30 @@ export default function App() {
             </div>
             <div className="p-4 overflow-y-auto space-y-4">
               <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
-                <label className="text-[11px] text-zinc-400 block mb-1">Select Material Type</label>
-                <select value={batchConfig.material} onChange={(e) => setBatchConfig({ ...batchConfig, material: e.target.value })} className="w-full px-2.5 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-white">
-                  {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
+                <div>
+                  <label className="text-[11px] text-zinc-400 block mb-1">Assigned Owner (Who Paid)</label>
+                  <select value={batchConfig.ownerId} onChange={(e) => setBatchConfig({ ...batchConfig, ownerId: e.target.value })} className="w-full px-2.5 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-white">
+                    {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
 
-                <label className="text-[11px] text-zinc-400 block mb-1.5">Select Color: <strong className="text-white">{batchConfig.colorName}</strong></label>
-                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-zinc-900 rounded-lg">
-                  {FILAMENT_COLORS.map((c) => (
-                    <button key={c.name} type="button" onClick={() => setBatchConfig({ ...batchConfig, colorName: c.name, colorHex: c.hex })} className={`px-2 py-1 rounded-lg border text-[11px] flex items-center gap-1.5 ${batchConfig.colorName === c.name ? 'bg-amber-500/25 border-amber-400 text-white font-bold' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
-                      <span className="w-3 h-3 rounded-full border border-white/20" style={{ backgroundColor: c.hex }} />
-                      {c.name}
-                    </button>
-                  ))}
+                <div>
+                  <label className="text-[11px] text-zinc-400 block mb-1">Select Material Type</label>
+                  <select value={batchConfig.material} onChange={(e) => setBatchConfig({ ...batchConfig, material: e.target.value })} className="w-full px-2.5 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-white">
+                    {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-zinc-400 block mb-1.5">Select Color: <strong className="text-white">{batchConfig.colorName}</strong></label>
+                  <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1 bg-zinc-900 rounded-lg">
+                    {FILAMENT_COLORS.map((c) => (
+                      <button key={c.name} type="button" onClick={() => setBatchConfig({ ...batchConfig, colorName: c.name, colorHex: c.hex })} className={`px-2 py-1 rounded-lg border text-[11px] flex items-center gap-1.5 ${batchConfig.colorName === c.name ? 'bg-amber-500/25 border-amber-400 text-white font-bold' : 'bg-zinc-950 border-zinc-800 text-zinc-400'}`}>
+                        <span className="w-3 h-3 rounded-full border border-white/20" style={{ backgroundColor: c.hex }} />
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -1108,6 +1143,7 @@ export default function App() {
                     {batchSessionSpools.map((sp) => (
                       <div key={sp.id} className="px-3 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-xs flex justify-between">
                         <span className="font-mono text-amber-300">{sp.barcode} - {sp.material} ({sp.colorName})</span>
+                        <span className="text-zinc-400">{ownerMap[sp.ownerId]?.name}</span>
                       </div>
                     ))}
                   </div>
@@ -1119,7 +1155,20 @@ export default function App() {
       )}
 
       {spoolFormModal && (
-        <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={(sp) => { setSpools((prev) => [sp, ...prev]); setSpoolFormModal(null); }} onDelete={(id) => setSpools((prev) => prev.filter(s => s.id !== id))} />
+        <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={(sp) => {
+          if (spoolFormModal.isEdit) {
+            setSpools((prev) => prev.map((s) => s.id === sp.id ? sp : s));
+            showToast(`Updated spool ${sp.barcode}`, 'success');
+          } else {
+            setSpools((prev) => [sp, ...prev]);
+            showToast(`Registered new spool ${sp.barcode}`, 'success');
+          }
+          setSpoolFormModal(null);
+        }} onDelete={(id) => {
+          setSpools((prev) => prev.filter(s => s.id !== id));
+          setSpoolFormModal(null);
+          showToast('Spool deleted', 'info');
+        }} />
       )}
 
       {ownerModal && (
@@ -1171,17 +1220,68 @@ function SpoolFormModal({ modalData, owners, onClose, onSave, onDelete }) {
   const [form, setForm] = useState(modalData.spool);
   return (
     <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
-          <span className="font-extrabold text-sm text-white uppercase">Register Spool</span>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-md max-h-[92vh] overflow-y-auto shadow-2xl">
+        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between sticky top-0 z-10">
+          <span className="font-extrabold text-sm text-white uppercase">{modalData.isEdit ? 'Edit Spool' : 'Register Spool'}</span>
           <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); onSave({ ...form, id: `sp-${Date.now()}` }); }} className="p-4 space-y-3.5">
-          <input type="text" required value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono font-bold text-amber-300" />
-          <select value={form.material} onChange={(e) => setForm({ ...form, material: e.target.value })} className="w-full px-2.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white">
-            {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 font-extrabold text-xs uppercase text-zinc-950">Save Spool</button>
+        <form onSubmit={(e) => { e.preventDefault(); onSave({ ...form, id: form.id || `sp-${Date.now()}` }); }} className="p-4 space-y-3.5">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Spool Barcode ID</label>
+            <input type="text" required value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value.toUpperCase() })} placeholder="e.g., BBL-100500" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono font-bold text-amber-300" />
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Owner (Who Paid)</label>
+            <select value={form.ownerId} onChange={(e) => setForm({ ...form, ownerId: e.target.value })} className="w-full px-2.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white">
+              {owners.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Material Type</label>
+            <select value={form.material} onChange={(e) => setForm({ ...form, material: e.target.value })} className="w-full px-2.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white">
+              {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Color: <strong className="text-white">{form.colorName}</strong></label>
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1 bg-zinc-950 border border-zinc-800 rounded-lg mb-2">
+              {FILAMENT_COLORS.map((c) => (
+                <button key={c.name} type="button" onClick={() => setForm({ ...form, colorName: c.name, colorHex: c.hex })} className={`px-2 py-1 rounded border text-[11px] flex items-center gap-1 ${form.colorName === c.name ? 'bg-amber-500/25 border-amber-400 text-white font-bold' : 'bg-zinc-900 border-zinc-800 text-zinc-400'}`}>
+                  <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ backgroundColor: c.hex }} />
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input type="text" value={form.colorName} onChange={(e) => setForm({ ...form, colorName: e.target.value })} placeholder="Custom Color Name" className="flex-1 px-3 py-1.5 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+              <input type="color" value={form.colorHex} onChange={(e) => setForm({ ...form, colorHex: e.target.value })} className="w-10 h-8 bg-zinc-950 border border-zinc-700 rounded-lg cursor-pointer" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Remaining (g)</label>
+              <input type="number" value={form.remainingWeight} onChange={(e) => setForm({ ...form, remainingWeight: Number(e.target.value) })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-emerald-400 font-bold" />
+            </div>
+            <div>
+              <label className="text-[11px] text-zinc-400 block mb-1">Initial Net (g)</label>
+              <input type="number" value={form.initialWeight} onChange={(e) => setForm({ ...form, initialWeight: Number(e.target.value) })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            {modalData.isEdit && (
+              <button type="button" onClick={() => onDelete(form.id)} className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button type="submit" className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase shadow">
+              {modalData.isEdit ? 'Save Changes' : 'Register Spool'}
+            </button>
+          </div>
         </form>
       </div>
     </div>
