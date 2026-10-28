@@ -38,7 +38,12 @@ import {
   ShieldCheck,
   UserPlus,
   Lock,
-  LogOut
+  LogOut,
+  Clock,
+  Send,
+  ExternalLink,
+  ThumbsUp,
+  PackageCheck
 } from 'lucide-react';
 
 // ============================================================================
@@ -153,6 +158,7 @@ const INITIAL_OWNERS = [
 
 const INITIAL_SPOOLS = [];
 const INITIAL_LOGS = [];
+const INITIAL_REQUESTS = [];
 const AMS_SLOTS = ['A1', 'A2', 'A3', 'A4'];
 
 // ============================================================================
@@ -307,6 +313,15 @@ export default function App() {
     }
   });
 
+  const [printRequests, setPrintRequests] = useState(() => {
+    try {
+      const saved = localStorage.getItem('zebra_ams_requests_v1');
+      return saved ? JSON.parse(saved) : INITIAL_REQUESTS;
+    } catch {
+      return INITIAL_REQUESTS;
+    }
+  });
+
   const [soundEnabled, setSoundEnabled] = useState(true);
 
   useEffect(() => {
@@ -320,6 +335,10 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem('zebra_ams_logs_v1', JSON.stringify(logs)); } catch (e) {}
   }, [logs]);
+
+  useEffect(() => {
+    try { localStorage.setItem('zebra_ams_requests_v1', JSON.stringify(printRequests)); } catch (e) {}
+  }, [printRequests]);
 
   useEffect(() => {
     try {
@@ -342,7 +361,8 @@ export default function App() {
   const [scaleModal, setScaleModal] = useState(null);
   const [labelModal, setLabelModal] = useState(null);
   const [ownerModal, setOwnerModal] = useState(null);
-  const [zebraGuideOpen, setZebraGuideOpen] = useState(false);
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [completeRequestModal, setCompleteRequestModal] = useState(null); // { request }
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
@@ -698,11 +718,18 @@ export default function App() {
 
             <div className="flex items-center gap-1.5">
               <button
+                onClick={() => setRequestModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition active:scale-95"
+              >
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline">Request Print</span>
+              </button>
+              <button
                 onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs shadow transition active:scale-95"
               >
                 <PackagePlus className="w-4 h-4" />
-                <span className="hidden sm:inline">Batch Intake (29)</span>
+                <span className="hidden sm:inline">Batch Intake</span>
               </button>
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
@@ -799,6 +826,121 @@ export default function App() {
               </div>
             </div>
 
+            {/* Print Queue / Requests Dashboard Widget */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-indigo-400" /> Print Requests & Queue ({printRequests.length})
+                </h3>
+                <button onClick={() => setRequestModalOpen(true)} className="text-xs text-indigo-400 hover:underline font-bold">
+                  + Submit New Request
+                </button>
+              </div>
+
+              {printRequests.length === 0 ? (
+                <p className="text-xs text-zinc-500 py-3 text-center">No active print requests in queue.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {printRequests.map((req) => {
+                    const reqOwner = ownerMap[req.ownerId]?.name || 'Unknown';
+                    const foreignSpools = req.selectedSpoolIds.map(id => spools.find(s => s.id === id)).filter(s => s && s.ownerId !== req.ownerId);
+                    const needsApproval = foreignSpools.length > 0 && !req.approved;
+
+                    return (
+                      <div key={req.id} className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              req.status === 'WAITING_APPROVAL' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                              req.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                              req.status === 'PREPARING' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' :
+                              req.status === 'AWAITING_PICKUP' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                              'bg-zinc-800 text-zinc-400'
+                            }`}>
+                              {req.status.replace('_', ' ')}
+                            </span>
+                            <span className="text-sm font-bold text-white truncate">{req.title}</span>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 flex items-center gap-2 flex-wrap">
+                            <span>Requested by: <strong className="text-amber-300">{reqOwner}</strong></span>
+                            {req.makerWorldUrl && (
+                              <a href={req.makerWorldUrl} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline inline-flex items-center gap-1 font-mono text-[11px]">
+                                MakerWorld Link <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Spool requirements */}
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {req.selectedSpoolIds.map(id => {
+                              const sp = spools.find(s => s.id === id);
+                              if (!sp) return null;
+                              const spOwner = ownerMap[sp.ownerId]?.name;
+                              const isForeign = sp.ownerId !== req.ownerId;
+                              return (
+                                <span key={id} className={`px-2 py-0.5 rounded text-[11px] font-mono border ${isForeign ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
+                                  {sp.material} ({sp.colorName}) — Owner: {spOwner} {isForeign ? '(Co-op)' : ''}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Action buttons based on status & role */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          {needsApproval && (currentUser.isAdmin || foreignSpools.some(s => s.ownerId === currentUser.id)) && (
+                            <button
+                              onClick={() => {
+                                setPrintRequests(prev => prev.map(r => r.id === req.id ? { ...r, approved: true, status: 'APPROVED' } : r));
+                                showToast(`Approved print request for ${req.title}!`, 'success');
+                              }}
+                              className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                            >
+                              <ThumbsUp className="w-3.5 h-3.5" /> Approve Spools
+                            </button>
+                          )}
+
+                          {req.status === 'APPROVED' && currentUser.isAdmin && (
+                            <button
+                              onClick={() => {
+                                setPrintRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'PREPARING' } : r));
+                                showToast(`Moved "${req.title}" to Preparing to print!`, 'success');
+                              }}
+                              className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                            >
+                              Accept & Prepare
+                            </button>
+                          )}
+
+                          {req.status === 'PREPARING' && currentUser.isAdmin && (
+                            <button
+                              onClick={() => setCompleteRequestModal({ request: req })}
+                              className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 shadow"
+                            >
+                              <PackageCheck className="w-3.5 h-3.5" /> Mark Completed
+                            </button>
+                          )}
+
+                          {req.status === 'AWAITING_PICKUP' && (
+                            <button
+                              onClick={() => {
+                                setPrintRequests(prev => prev.filter(r => r.id !== req.id));
+                                showToast(`Archived completed print request.`, 'info');
+                              }}
+                              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs"
+                            >
+                              Dismiss
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
               {AMS_SLOTS.map((slotKey) => {
                 const spool = amsSlotMap[slotKey];
@@ -884,7 +1026,7 @@ export default function App() {
                   <button onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }} className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow">
                     <PackagePlus className="w-4 h-4" /> Batch Scan 29 Rolls
                   </button>
-                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White', colorHex: '#F8FAFC', brand: 'Bambu Lab', ownerId: currentUser?.id || owners[0]?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
+                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White', colorHex: '#F8FAFC', brand: 'Bambu Lab', ownerId: currentUser?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
                     <Plus className="w-4 h-4 text-amber-400" /> New Spool
                   </button>
                 </div>
@@ -1154,6 +1296,41 @@ export default function App() {
         </div>
       )}
 
+      {/* Print Request Modal */}
+      {requestModalOpen && (
+        <PrintRequestModal
+          owners={owners}
+          spools={spools}
+          currentUser={currentUser}
+          onClose={() => setRequestModalOpen(false)}
+          onSubmitRequest={(newReq) => {
+            setPrintRequests(prev => [newReq, ...prev]);
+            setRequestModalOpen(false);
+            showToast('Print request submitted to queue!', 'success');
+          }}
+        />
+      )}
+
+      {/* Complete Request Modal */}
+      {completeRequestModal && (
+        <CompleteRequestModal
+          request={completeRequestModal.request}
+          spools={spools}
+          onClose={() => setCompleteRequestModal(null)}
+          onComplete={({ usageGrams }) => {
+            const req = completeRequestModal.request;
+            // Deduct grams from first selected spool
+            if (req.selectedSpoolIds.length > 0) {
+              const targetSpoolId = req.selectedSpoolIds[0];
+              setSpools(prev => prev.map(s => s.id === targetSpoolId ? { ...s, remainingWeight: Math.max(0, s.remainingWeight - usageGrams) } : s));
+            }
+            setPrintRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'AWAITING_PICKUP' } : r));
+            setCompleteRequestModal(null);
+            showToast(`Print marked completed (-${usageGrams}g). Moved to Awaiting Pickup!`, 'success');
+          }}
+        />
+      )}
+
       {spoolFormModal && (
         <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={(sp) => {
           if (spoolFormModal.isEdit) {
@@ -1212,6 +1389,150 @@ export default function App() {
           })}
         </div>
       </nav>
+    </div>
+  );
+}
+
+// ============================================================================
+// PRINT REQUEST SUBMISSION MODAL
+// ============================================================================
+function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitRequest }) {
+  const [title, setTitle] = useState('');
+  const [makerWorldUrl, setMakerWorldUrl] = useState('');
+  const [selectedSpoolIds, setSelectedSpoolIds] = useState([]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+
+    // Check if any selected spool belongs to another owner
+    const foreignSpools = selectedSpoolIds.map(id => spools.find(s => s.id === id)).filter(s => s && s.ownerId !== currentUser.id);
+    const initialStatus = foreignSpools.length > 0 ? 'WAITING_APPROVAL' : 'APPROVED';
+
+    onSubmitRequest({
+      id: `req-${Date.now()}`,
+      title: title.trim(),
+      makerWorldUrl: makerWorldUrl.trim(),
+      ownerId: currentUser.id,
+      selectedSpoolIds,
+      status: initialStatus,
+      approved: foreignSpools.length === 0,
+      createdAt: new Date().toISOString()
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl">
+        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between sticky top-0 z-10">
+          <span className="font-extrabold text-sm text-white uppercase flex items-center gap-2">
+            <Send className="w-4 h-4 text-indigo-400" /> Request 3D Print Job
+          </span>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Model / Print Title</label>
+            <input
+              type="text"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g., Gundam Strike Freedom Wall Art"
+              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">MakerWorld Link / URL</label>
+            <input
+              type="url"
+              value={makerWorldUrl}
+              onChange={(e) => setMakerWorldUrl(e.target.value)}
+              placeholder="https://makerworld.com/en/models/..."
+              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs text-zinc-400 block">Select Spools to Use (Including Co-Op Spools):</label>
+            {spools.length === 0 ? (
+              <p className="text-xs text-zinc-500 italic">No spools currently registered in inventory.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-1.5 p-1 bg-zinc-950 border border-zinc-800 rounded-xl">
+                {spools.map((sp) => {
+                  const spOwner = owners.find(o => o.id === sp.ownerId)?.name || 'Unknown';
+                  const isChecked = selectedSpoolIds.includes(sp.id);
+                  const isForeign = sp.ownerId !== currentUser.id;
+
+                  return (
+                    <label key={sp.id} className={`flex items-center justify-between p-2 rounded-lg cursor-pointer border ${isChecked ? 'bg-indigo-500/10 border-indigo-500/50 text-white' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedSpoolIds([...selectedSpoolIds, sp.id]);
+                            else setSelectedSpoolIds(selectedSpoolIds.filter(id => id !== sp.id));
+                          }}
+                          className="rounded bg-zinc-950 border-zinc-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: sp.colorHex }} />
+                        <div className="min-w-0 text-xs">
+                          <div className="font-bold truncate">{sp.material} ({sp.colorName})</div>
+                          <div className="text-[10px] font-mono text-zinc-400">{sp.barcode} • Owner: {spOwner} {isForeign ? '(Requires Approval)' : ''}</div>
+                        </div>
+                      </div>
+                      <span className="text-xs font-mono text-emerald-400 font-bold">{sp.remainingWeight}g</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <button type="submit" className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg">
+            Submit Print Request
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPLETE PRINT REQUEST MODAL
+// ============================================================================
+function CompleteRequestModal({ request, spools, onClose, onComplete }) {
+  const [usageGrams, setUsageGrams] = useState(50);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
+          <span className="font-bold text-sm text-white">Complete Print: {request.title}</span>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); onComplete({ usageGrams: Number(usageGrams) || 0 }); }} className="p-4 space-y-4">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Total Filament Consumed (Grams)</label>
+            <input
+              type="number"
+              min="1"
+              required
+              value={usageGrams}
+              onChange={(e) => setUsageGrams(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-sm font-mono font-bold text-amber-400 focus:outline-none"
+            />
+          </div>
+
+          <button type="submit" className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase shadow">
+            Confirm & Mark Awaiting Pickup
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
