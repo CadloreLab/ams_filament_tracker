@@ -43,7 +43,9 @@ import {
   Send,
   ExternalLink,
   ThumbsUp,
-  PackageCheck
+  PackageCheck,
+  Bell,
+  Ban
 } from 'lucide-react';
 
 // ============================================================================
@@ -319,6 +321,7 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [printRequests, setPrintRequests] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [loginNotificationModal, setLoginNotificationModal] = useState(null);
 
   // --- Real-time Firestore Sync with LocalStorage Fallback ---
   useEffect(() => {
@@ -368,6 +371,15 @@ export default function App() {
     }
   }, []);
 
+  // Check login notifications once user logs in
+  useEffect(() => {
+    if (!currentUser || printRequests.length === 0) return;
+    const userNotifs = printRequests.filter(req => req.ownerId === currentUser.id && (req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !req.notified);
+    if (userNotifs.length > 0) {
+      setLoginNotificationModal(userNotifs);
+    }
+  }, [currentUser, printRequests]);
+
   useEffect(() => {
     try {
       if (currentUser) localStorage.setItem('zebra_ams_current_user_v1', JSON.stringify(currentUser));
@@ -391,6 +403,7 @@ export default function App() {
   const [ownerModal, setOwnerModal] = useState(null);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [completeRequestModal, setCompleteRequestModal] = useState(null);
+  const [denyModal, setDenyModal] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
@@ -438,6 +451,7 @@ export default function App() {
   });
   const [batchSessionSpools, setBatchSessionSpools] = useState([]);
   const [batchBarcodeInput, setBatchBarcodeInput] = useState('');
+  const [slotScanBarcode, setSlotScanBarcode] = useState('');
 
   const handleBarcodeScanned = useCallback(
     async (rawCode) => {
@@ -506,12 +520,14 @@ export default function App() {
             });
           }
           setLoadSlotModal(null);
+          setSlotScanBarcode('');
           playZebraBeep('success', soundEnabled);
           showToast(`Loaded ${found.barcode} into AMS Slot ${targetSlot}!`, 'success');
           return;
         } else {
           playZebraBeep('scan', soundEnabled);
           setLoadSlotModal(null);
+          setSlotScanBarcode('');
           setSpoolFormModal({
             isEdit: false,
             targetAmsSlot: targetSlot,
@@ -639,6 +655,7 @@ export default function App() {
     showToast(`Loaded ${targetSpool.barcode} into AMS Slot ${slot}`, 'success');
     setScannedSpoolModal(null);
     setLoadSlotModal(null);
+    setSlotScanBarcode('');
   };
 
   const unloadSpoolFromAms = async (spoolId) => {
@@ -873,6 +890,44 @@ export default function App() {
         </div>
       )}
 
+      {/* Login Notification Popup */}
+      {loginNotificationModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+          <div className="bg-zinc-900 border border-indigo-500/60 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl space-y-4 p-6 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 mx-auto">
+              <Bell className="w-6 h-6 animate-bounce" />
+            </div>
+            <h3 className="text-lg font-extrabold text-white">Print Request Updates!</h3>
+            <div className="space-y-2 max-h-48 overflow-y-auto text-left">
+              {loginNotificationModal.map(req => (
+                <div key={req.id} className={`p-3 rounded-xl border text-xs space-y-1 ${req.status === 'AWAITING_PICKUP' ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200' : 'bg-rose-950/40 border-rose-500/40 text-rose-200'}`}>
+                  <div className="font-bold flex items-center justify-between">
+                    <span>{req.title}</span>
+                    <span className="uppercase">{req.status.replace('_', ' ')}</span>
+                  </div>
+                  {req.status === 'DENIED' && req.denyReason && (
+                    <div className="text-[11px] text-zinc-300 italic">Reason: "{req.denyReason}"</div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={async () => {
+                if (db) {
+                  for (const req of loginNotificationModal) {
+                    await setDoc(doc(db, 'printRequests', req.id), { ...req, notified: true }, { merge: true }).catch(() => {});
+                  }
+                }
+                setLoginNotificationModal(null);
+              }}
+              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs uppercase shadow"
+            >
+              Got it, thanks!
+            </button>
+          </div>
+        </div>
+      )}
+
       <main className="max-w-5xl mx-auto px-3 pt-4 space-y-4">
         {activeTab === 'ams' && (
           <div className="space-y-4">
@@ -892,129 +947,6 @@ export default function App() {
               <div className="mt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                 <div className="text-xs text-zinc-400">Scan any spool barcode with the Zebra trigger to load/unload, or tap a slot below.</div>
               </div>
-            </div>
-
-            {/* Print Queue / Requests Dashboard Widget */}
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-indigo-400" /> Print Requests & Queue ({printRequests.length})
-                </h3>
-                <button onClick={() => setRequestModalOpen(true)} className="text-xs text-indigo-400 hover:underline font-bold">
-                  + Submit New Request
-                </button>
-              </div>
-
-              {printRequests.length === 0 ? (
-                <p className="text-xs text-zinc-500 py-3 text-center">No active print requests in queue.</p>
-              ) : (
-                <div className="space-y-2.5">
-                  {printRequests.map((req) => {
-                    const reqOwner = ownerMap[req.ownerId]?.name || 'Unknown';
-                    const foreignSpools = req.selectedSpoolIds.map(id => spools.find(s => s.id === id)).filter(s => s && s.ownerId !== req.ownerId);
-                    const needsApproval = foreignSpools.length > 0 && !req.approved;
-
-                    return (
-                      <div key={req.id} className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                              req.status === 'WAITING_APPROVAL' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
-                              req.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
-                              req.status === 'PREPARING' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' :
-                              req.status === 'AWAITING_PICKUP' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
-                              'bg-zinc-800 text-zinc-400'
-                            }`}>
-                              {req.status.replace('_', ' ')}
-                            </span>
-                            <span className="text-sm font-bold text-white truncate">{req.title}</span>
-                          </div>
-
-                          <div className="text-xs text-zinc-400 flex items-center gap-2 flex-wrap">
-                            <span>Requested by: <strong className="text-amber-300">{reqOwner}</strong></span>
-                            {req.makerWorldUrl && (
-                              <a href={req.makerWorldUrl} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline inline-flex items-center gap-1 font-mono text-[11px]">
-                                MakerWorld Link <ExternalLink className="w-3 h-3" />
-                              </a>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {req.selectedSpoolIds.map(id => {
-                              const sp = spools.find(s => s.id === id);
-                              if (!sp) return null;
-                              const spOwner = ownerMap[sp.ownerId]?.name;
-                              const isForeign = sp.ownerId !== req.ownerId;
-                              return (
-                                <span key={id} className={`px-2 py-0.5 rounded text-[11px] font-mono border ${isForeign ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
-                                  {sp.material} ({sp.colorName}) — Owner: {spOwner} {isForeign ? '(Co-op)' : ''}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0">
-                          {needsApproval && (currentUser.isAdmin || foreignSpools.some(s => s.ownerId === currentUser.id)) && (
-                            <button
-                              onClick={async () => {
-                                if (db) {
-                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, approved: true, status: 'APPROVED' }, { merge: true }).catch(() => {});
-                                }
-                                showToast(`Approved print request for ${req.title}!`, 'success');
-                              }}
-                              className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow"
-                            >
-                              <ThumbsUp className="w-3.5 h-3.5" /> Approve Spools
-                            </button>
-                          )}
-
-                          {req.status === 'APPROVED' && currentUser.isAdmin && (
-                            <button
-                              onClick={async () => {
-                                if (req.status === 'WAITING_APPROVAL') {
-                                  showToast('Cannot accept: waiting for spool owner approval!', 'error');
-                                  return;
-                                }
-                                if (db) {
-                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true }).catch(() => {});
-                                }
-                                showToast(`Moved "${req.title}" to Preparing to print!`, 'success');
-                              }}
-                              className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
-                            >
-                              Accept & Prepare
-                            </button>
-                          )}
-
-                          {req.status === 'PREPARING' && currentUser.isAdmin && (
-                            <button
-                              onClick={() => setCompleteRequestModal({ request: req })}
-                              className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 shadow"
-                            >
-                              <PackageCheck className="w-3.5 h-3.5" /> Mark Completed
-                            </button>
-                          )}
-
-                          {req.status === 'AWAITING_PICKUP' && (
-                            <button
-                              onClick={async () => {
-                                if (db) {
-                                  await deleteDoc(doc(db, 'printRequests', req.id)).catch(() => {});
-                                }
-                                showToast(`Archived completed print request.`, 'info');
-                              }}
-                              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs"
-                            >
-                              Dismiss
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -1076,7 +1008,7 @@ export default function App() {
                         </div>
                         <div>
                           <p className="text-xs font-bold text-zinc-300">Slot {slotKey} is Empty</p>
-                          <p className="text-[11px] text-zinc-500">Tap below & pull Zebra trigger to load spool</p>
+                          <p className="text-[11px] text-zinc-500">Tap below to load spool</p>
                         </div>
                         <button onClick={() => setLoadSlotModal({ slot: slotKey })} className="w-full py-2.5 px-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-amber-400 font-bold text-xs flex items-center justify-center gap-2">
                           <ScanBarcode className="w-4 h-4" /> Load Spool into {slotKey}
@@ -1086,6 +1018,158 @@ export default function App() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'queue' && (
+          <div className="space-y-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-indigo-400" /> Print Requests & Production Queue ({printRequests.length})
+                  </h2>
+                  <p className="text-xs text-zinc-400">Manage incoming print jobs, co-op approvals, and production workflow</p>
+                </div>
+                <button onClick={() => setRequestModalOpen(true)} className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow">
+                  <Send className="w-4 h-4" /> Submit Print Request
+                </button>
+              </div>
+
+              {printRequests.length === 0 ? (
+                <div className="text-center py-12 space-y-2">
+                  <Clock className="w-10 h-10 text-zinc-600 mx-auto" />
+                  <p className="text-sm font-bold text-zinc-300">No print requests in queue</p>
+                  <p className="text-xs text-zinc-500">Submit a print request with a MakerWorld link and spool selections to get started.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {printRequests.map((req) => {
+                    const reqOwner = ownerMap[req.ownerId]?.name || 'Unknown';
+                    const foreignSpoolItems = req.selectedSpoolIds.map(id => {
+                      const sp = spools.find(s => s.id === id);
+                      return { spool: sp, isForeign: sp && sp.ownerId !== req.ownerId, denied: req.deniedSpoolIds?.includes(id) };
+                    }).filter(item => item.spool);
+
+                    const unapprovedForeign = foreignSpoolItems.filter(item => item.isForeign && !req.approved && !item.denied);
+                    const isDenied = req.status === 'DENIED';
+
+                    return (
+                      <div key={req.id} className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              req.status === 'WAITING_APPROVAL' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
+                              req.status === 'APPROVED' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40' :
+                              req.status === 'PREPARING' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40' :
+                              req.status === 'AWAITING_PICKUP' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' :
+                              req.status === 'DENIED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+                              'bg-zinc-800 text-zinc-400'
+                            }`}>
+                              {req.status.replace('_', ' ')}
+                            </span>
+                            <span className="text-base font-extrabold text-white truncate">{req.title}</span>
+                          </div>
+
+                          <div className="text-xs text-zinc-400 flex items-center gap-3 flex-wrap">
+                            <span>Requested by: <strong className="text-amber-300">{reqOwner}</strong></span>
+                            {req.makerWorldUrl && (
+                              <a href={req.makerWorldUrl} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline inline-flex items-center gap-1 font-mono text-xs">
+                                MakerWorld Link <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+
+                          {isDenied && req.denyReason && (
+                            <div className="text-xs text-rose-400 font-medium">Denial Reason: {req.denyReason}</div>
+                          )}
+
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {foreignSpoolItems.map(({ spool, isForeign, denied }) => {
+                              const spOwner = ownerMap[spool.ownerId]?.name;
+                              const canDenyThis = (currentUser.id === spool.ownerId || currentUser.isAdmin) && req.status === 'WAITING_APPROVAL' && !denied;
+
+                              return (
+                                <div key={spool.id} className={`flex items-center gap-2 px-2 py-1 rounded text-[11px] font-mono border ${denied ? 'bg-rose-950/40 border-rose-500/50 text-rose-300 line-through' : isForeign ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
+                                  <span>{spool.material} ({spool.colorName}) — Owner: {spOwner} {isForeign ? '(Co-op)' : ''}</span>
+                                  {canDenyThis && (
+                                    <button
+                                      onClick={() => setDenyModal({ request: req, spoolId: spool.id })}
+                                      className="px-1.5 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px]"
+                                      title="Deny Spool"
+                                    >
+                                      Deny
+                                    </button>
+                                  )}
+                                  {denied && <span className="text-[10px] text-rose-400 font-bold no-underline">[DENIED]</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                          {unapprovedForeign.length > 0 && (currentUser.isAdmin || unapprovedForeign.some(item => item.spool.ownerId === currentUser.id)) && (
+                            <button
+                              onClick={async () => {
+                                if (db) {
+                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, approved: true, status: 'APPROVED' }, { merge: true }).catch(() => {});
+                                }
+                                showToast(`Approved print request for ${req.title}!`, 'success');
+                              }}
+                              className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                            >
+                              <ThumbsUp className="w-3.5 h-3.5" /> Approve Spools
+                            </button>
+                          )}
+
+                          {req.status === 'APPROVED' && currentUser.isAdmin && (
+                            <button
+                              onClick={async () => {
+                                if (unapprovedForeign.length > 0) {
+                                  showToast('Cannot accept: waiting for spool owner approval!', 'error');
+                                  return;
+                                }
+                                if (db) {
+                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true }).catch(() => {});
+                                }
+                                showToast(`Moved "${req.title}" to Preparing to print!`, 'success');
+                              }}
+                              className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
+                            >
+                              Accept & Prepare
+                            </button>
+                          )}
+
+                          {req.status === 'PREPARING' && currentUser.isAdmin && (
+                            <button
+                              onClick={() => setCompleteRequestModal({ request: req })}
+                              className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 shadow"
+                            >
+                              <PackageCheck className="w-3.5 h-3.5" /> Mark Completed
+                            </button>
+                          )}
+
+                          {(req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && (
+                            <button
+                              onClick={async () => {
+                                if (db) {
+                                  await deleteDoc(doc(db, 'printRequests', req.id)).catch(() => {});
+                                }
+                                showToast(`Archived print request.`, 'info');
+                              }}
+                              className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold"
+                            >
+                              Dismiss
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1318,30 +1402,56 @@ export default function App() {
               <span className="font-extrabold text-sm text-white uppercase">Load Spool into Slot {loadSlotModal.slot}</span>
               <button onClick={() => setLoadSlotModal(null)} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-4 overflow-y-auto space-y-3">
-              <p className="text-xs text-zinc-400">Scan any spool barcode with your Zebra scanner, or pick an existing spool below:</p>
-              {spools.filter(s => !s.amsSlot).length === 0 ? (
-                <p className="text-xs text-zinc-500 italic py-4 text-center">No available spools in storage. Register a new spool or scan a barcode.</p>
-              ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {spools.filter(s => !s.amsSlot).map(sp => (
-                    <button
-                      key={sp.id}
-                      onClick={() => loadSpoolIntoSlot(sp.id, loadSlotModal.slot)}
-                      className="w-full p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-amber-500 text-left flex items-center justify-between transition"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: sp.colorHex }} />
-                        <div className="min-w-0 text-xs">
-                          <div className="font-bold text-white truncate">{sp.material} ({sp.colorName})</div>
-                          <div className="font-mono text-[10px] text-zinc-400">{sp.barcode}</div>
-                        </div>
-                      </div>
-                      <span className="text-xs font-mono text-emerald-400 font-bold shrink-0">{sp.remainingWeight}g</span>
-                    </button>
-                  ))}
+            <div className="p-4 overflow-y-auto space-y-4">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!slotScanBarcode.trim()) return;
+                  handleBarcodeScanned(slotScanBarcode.trim());
+                }}
+                className="p-3 bg-amber-500/10 border border-amber-500/40 rounded-xl space-y-2"
+              >
+                <label className="text-xs text-amber-300 font-bold block">Scan Barcode with Zebra Trigger or Type Below:</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={slotScanBarcode}
+                    onChange={(e) => setSlotScanBarcode(e.target.value)}
+                    placeholder="Scan barcode for slot..."
+                    className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white focus:outline-none focus:border-amber-400"
+                  />
+                  <button type="submit" className="px-3 py-2 bg-amber-500 text-zinc-950 font-extrabold text-xs rounded-lg">
+                    LOAD
+                  </button>
                 </div>
-              )}
+              </form>
+
+              <div>
+                <p className="text-xs text-zinc-400 mb-2">Or select an existing spool from storage:</p>
+                {spools.filter(s => !s.amsSlot).length === 0 ? (
+                  <p className="text-xs text-zinc-500 italic py-2 text-center">No available spools in storage.</p>
+                ) : (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {spools.filter(s => !s.amsSlot).map(sp => (
+                      <button
+                        key={sp.id}
+                        onClick={() => loadSpoolIntoSlot(sp.id, loadSlotModal.slot)}
+                        className="w-full p-2.5 rounded-xl bg-zinc-950 border border-zinc-800 hover:border-amber-500 text-left flex items-center justify-between transition"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-3.5 h-3.5 rounded-full shrink-0 border border-white/20" style={{ backgroundColor: sp.colorHex }} />
+                          <div className="min-w-0 text-xs">
+                            <div className="font-bold text-white truncate">{sp.material} ({sp.colorName})</div>
+                            <div className="font-mono text-[10px] text-zinc-400">{sp.barcode}</div>
+                          </div>
+                        </div>
+                        <span className="text-xs font-mono text-emerald-400 font-bold shrink-0">{sp.remainingWeight}g</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1525,9 +1635,10 @@ export default function App() {
       )}
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-zinc-900/95 backdrop-blur border-t border-zinc-800">
-        <div className="max-w-5xl mx-auto grid grid-cols-5 px-2 py-1.5 gap-1">
+        <div className="max-w-5xl mx-auto grid grid-cols-6 px-2 py-1.5 gap-1">
           {[
             { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4` },
+            { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length },
             { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length },
             { id: 'owners', label: 'Owners', icon: Users, badge: owners.length },
             { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length },
@@ -1547,6 +1658,42 @@ export default function App() {
           })}
         </div>
       </nav>
+    </div>
+  );
+}
+
+// ============================================================================
+// DENY SPOOL MODAL WITH OPTIONAL REASON
+// ============================================================================
+function DenySpoolModal({ request, spoolId, spools, onClose, onDeny }) {
+  const [reason, setReason] = useState('');
+  const spool = spools.find(s => s.id === spoolId);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+      <div className="bg-zinc-900 border border-rose-500/50 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
+          <span className="font-bold text-sm text-white">Deny Spool Request</span>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); onDeny({ request, spoolId, reason }); }} className="p-4 space-y-3">
+          <p className="text-xs text-zinc-300">
+            Deny use of your spool <strong className="text-amber-300">{spool?.material} ({spool?.colorName})</strong> for request "{request.title}"?
+          </p>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Reason for Denial (Optional)</label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="e.g., Saving this roll for a personal multi-color print..."
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white focus:outline-none focus:border-rose-500 h-20 resize-none"
+            />
+          </div>
+          <button type="submit" className="w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs uppercase shadow">
+            Confirm Denial
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1572,6 +1719,7 @@ function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitReque
       makerWorldUrl: makerWorldUrl.trim(),
       ownerId: currentUser.id,
       selectedSpoolIds,
+      deniedSpoolIds: [],
       status: initialStatus,
       approved: foreignSpools.length === 0,
       createdAt: new Date().toISOString()
@@ -1775,24 +1923,30 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
           <span className="font-bold text-sm text-white">{modalData.isEdit ? 'Edit User / Owner' : 'Add New User & Login'}</span>
           <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) return; onSave(form); }} className="p-4 space-y-3">
+        <form onSubmit={(e) => { 
+          e.preventDefault(); 
+          if (!form.name.trim()) return; 
+          // Guard: Prevent users from granting themselves administrator privileges if not already admin
+          const finalForm = { ...form };
+          onSave(finalForm); 
+        }} className="p-4 space-y-3">
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Full Name</label>
-            <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g., Sam Rivera" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-zinc-400 block mb-1">Login Username</label>
-              <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} placeholder="e.g., sam" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+              <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
             <div>
               <label className="text-xs text-zinc-400 block mb-1">Login PIN / Password</label>
-              <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} placeholder="e.g., 1234" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+              <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
-            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g., Co-Op Friend" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0" />
