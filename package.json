@@ -1,7 +1,7 @@
 {
   "name": "ams-filament-tracker",
   "private": true,
-  "homepage": "https://YOUR_GITHUB_USERNAME.github.io/ams-filament-tracker",
+  "homepage": "https://CadloreLab.github.io/ams-filament-tracker",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
