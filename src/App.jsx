@@ -47,17 +47,16 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// FIREBASE INITIALIZATION & CLOUD SETUP
+// FIREBASE INITIALIZATION & SAFE FALLBACK
 // ============================================================================
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { 
   getFirestore, 
   collection, 
   doc, 
   setDoc, 
   deleteDoc, 
-  onSnapshot, 
-  query 
+  onSnapshot 
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -70,8 +69,13 @@ const firebaseConfig = {
   measurementId: "G-21G28ZQ5HP"
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+let db = null;
+try {
+  const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+  db = getFirestore(app);
+} catch (e) {
+  console.error("Firebase init error:", e);
+}
 
 // ============================================================================
 // OFFICIAL BAMBU LAB STORE CATALOG
@@ -298,7 +302,7 @@ const SpoolGaugeSVG = ({ hex = '#00AE42', percentage = 75, size = 54 }) => {
 };
 
 // ============================================================================
-// MAIN APP COMPONENT (FIRESTORE REAL-TIME SYNC)
+// MAIN APP COMPONENT
 // ============================================================================
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -316,41 +320,53 @@ export default function App() {
   const [printRequests, setPrintRequests] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
-  // --- Real-time Firestore Sync Listeners ---
+  // --- Real-time Firestore Sync with LocalStorage Fallback ---
   useEffect(() => {
-    const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setSpools(list);
-    });
+    if (!db) {
+      // Fallback to localStorage if firebase fails to load
+      try {
+        const s = localStorage.getItem('fallback_spools');
+        if (s) setSpools(JSON.parse(s));
+      } catch (e) {}
+      return;
+    }
 
-    const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
-      if (!snapshot.empty) {
+    try {
+      const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
         const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setOwners(list);
-      } else {
-        // Seed default owners if collection is empty
-        INITIAL_OWNERS.forEach(o => {
-          setDoc(doc(db, 'owners', o.id), o);
-        });
-      }
-    });
+        setSpools(list);
+      }, (err) => console.error("Spools sync error:", err));
 
-    const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
-    });
+      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
+        if (!snapshot.empty) {
+          const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+          setOwners(list);
+        } else {
+          INITIAL_OWNERS.forEach(o => {
+            setDoc(doc(db, 'owners', o.id), o).catch(() => {});
+          });
+        }
+      }, (err) => console.error("Owners sync error:", err));
 
-    const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-      setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-    });
+      const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+      }, (err) => console.error("Logs sync error:", err));
 
-    return () => {
-      unsubSpools();
-      unsubOwners();
-      unsubLogs();
-      unsubRequests();
-    };
+      const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      }, (err) => console.error("Requests sync error:", err));
+
+      return () => {
+        unsubSpools();
+        unsubOwners();
+        unsubLogs();
+        unsubRequests();
+      };
+    } catch (e) {
+      console.error("Firestore subscription error:", e);
+    }
   }, []);
 
   useEffect(() => {
@@ -452,7 +468,15 @@ export default function App() {
           createdAt: new Date().toISOString(),
           notes: `Batch Intake Roll #${batchSessionSpools.length + 1}`
         };
-        await setDoc(doc(db, 'spools', newSpoolId), newSpool);
+        if (db) {
+          await setDoc(doc(db, 'spools', newSpoolId), newSpool).catch(() => {});
+        } else {
+          setSpools(prev => {
+            const next = [newSpool, ...prev];
+            localStorage.setItem('fallback_spools', JSON.stringify(next));
+            return next;
+          });
+        }
         setBatchSessionSpools((prev) => [newSpool, ...prev]);
         setBatchBarcodeInput('');
         playZebraBeep('success', soundEnabled);
@@ -464,13 +488,24 @@ export default function App() {
         const targetSlot = loadSlotModal.slot;
         const found = spools.find((s) => s.barcode.toUpperCase() === code);
         if (found) {
-          // Clear slot occupancy first in cloud
-          for (const s of spools) {
-            if (s.amsSlot === targetSlot) {
-              await setDoc(doc(db, 'spools', s.id), { ...s, amsSlot: null }, { merge: true });
+          if (db) {
+            for (const s of spools) {
+              if (s.amsSlot === targetSlot) {
+                await setDoc(doc(db, 'spools', s.id), { ...s, amsSlot: null }, { merge: true }).catch(() => {});
+              }
             }
+            await setDoc(doc(db, 'spools', found.id), { ...found, amsSlot: targetSlot }, { merge: true }).catch(() => {});
+          } else {
+            setSpools(prev => {
+              const next = prev.map(s => {
+                if (s.id === found.id) return { ...s, amsSlot: targetSlot };
+                if (s.amsSlot === targetSlot) return { ...s, amsSlot: null };
+                return s;
+              });
+              localStorage.setItem('fallback_spools', JSON.stringify(next));
+              return next;
+            });
           }
-          await setDoc(doc(db, 'spools', found.id), { ...found, amsSlot: targetSlot }, { merge: true });
           setLoadSlotModal(null);
           playZebraBeep('success', soundEnabled);
           showToast(`Loaded ${found.barcode} into AMS Slot ${targetSlot}!`, 'success');
@@ -583,12 +618,24 @@ export default function App() {
     const targetSpool = spools.find((s) => s.id === spoolId);
     if (!targetSpool) return;
 
-    for (const s of spools) {
-      if (s.amsSlot === slot) {
-        await setDoc(doc(db, 'spools', s.id), { ...s, amsSlot: null }, { merge: true });
+    if (db) {
+      for (const s of spools) {
+        if (s.amsSlot === slot) {
+          await setDoc(doc(db, 'spools', s.id), { ...s, amsSlot: null }, { merge: true }).catch(() => {});
+        }
       }
+      await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: slot }, { merge: true }).catch(() => {});
+    } else {
+      setSpools(prev => {
+        const next = prev.map(s => {
+          if (s.id === spoolId) return { ...s, amsSlot: slot };
+          if (s.amsSlot === slot) return { ...s, amsSlot: null };
+          return s;
+        });
+        localStorage.setItem('fallback_spools', JSON.stringify(next));
+        return next;
+      });
     }
-    await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: slot }, { merge: true });
     playZebraBeep('success', soundEnabled);
     showToast(`Loaded ${targetSpool.barcode} into AMS Slot ${slot}`, 'success');
     setScannedSpoolModal(null);
@@ -599,7 +646,15 @@ export default function App() {
     const targetSpool = spools.find((s) => s.id === spoolId);
     if (!targetSpool) return;
     const oldSlot = targetSpool.amsSlot;
-    await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: null }, { merge: true });
+    if (db) {
+      await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: null }, { merge: true }).catch(() => {});
+    } else {
+      setSpools(prev => {
+        const next = prev.map(s => s.id === spoolId ? { ...s, amsSlot: null } : s);
+        localStorage.setItem('fallback_spools', JSON.stringify(next));
+        return next;
+      });
+    }
     playZebraBeep('scan', soundEnabled);
     showToast(`Unloaded ${targetSpool.barcode} from Slot ${oldSlot}`, 'info');
     setScannedSpoolModal(null);
@@ -904,7 +959,9 @@ export default function App() {
                           {needsApproval && (currentUser.isAdmin || foreignSpools.some(s => s.ownerId === currentUser.id)) && (
                             <button
                               onClick={async () => {
-                                await setDoc(doc(db, 'printRequests', req.id), { ...req, approved: true, status: 'APPROVED' }, { merge: true });
+                                if (db) {
+                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, approved: true, status: 'APPROVED' }, { merge: true }).catch(() => {});
+                                }
                                 showToast(`Approved print request for ${req.title}!`, 'success');
                               }}
                               className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow"
@@ -916,7 +973,9 @@ export default function App() {
                           {req.status === 'APPROVED' && currentUser.isAdmin && (
                             <button
                               onClick={async () => {
-                                await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true });
+                                if (db) {
+                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true }).catch(() => {});
+                                }
                                 showToast(`Moved "${req.title}" to Preparing to print!`, 'success');
                               }}
                               className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
@@ -937,7 +996,9 @@ export default function App() {
                           {req.status === 'AWAITING_PICKUP' && (
                             <button
                               onClick={async () => {
-                                await deleteDoc(doc(db, 'printRequests', req.id));
+                                if (db) {
+                                  await deleteDoc(doc(db, 'printRequests', req.id)).catch(() => {});
+                                }
                                 showToast(`Archived completed print request.`, 'info');
                               }}
                               className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs"
@@ -1038,7 +1099,7 @@ export default function App() {
                   <button onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }} className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow">
                     <PackagePlus className="w-4 h-4" /> Batch Scan 29 Rolls
                   </button>
-                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White', colorHex: '#F8FAFC', brand: 'Bambu Lab', ownerId: currentUser?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
+                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White', colorHex: '#F8FAFC', brand: 'Bambu Lab', ownerId: currentUser?.id || owners[0]?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
                     <Plus className="w-4 h-4 text-amber-400" /> New Spool
                   </button>
                 </div>
@@ -1316,7 +1377,9 @@ export default function App() {
           currentUser={currentUser}
           onClose={() => setRequestModalOpen(false)}
           onSubmitRequest={async (newReq) => {
-            await setDoc(doc(db, 'printRequests', newReq.id), newReq);
+            if (db) {
+              await setDoc(doc(db, 'printRequests', newReq.id), newReq).catch(() => {});
+            }
             setRequestModalOpen(false);
             showToast('Print request submitted to queue!', 'success');
           }}
@@ -1334,14 +1397,15 @@ export default function App() {
             if (req.selectedSpoolIds.length > 0) {
               const targetSpoolId = req.selectedSpoolIds[0];
               const targetSpool = spools.find(s => s.id === targetSpoolId);
-              if (targetSpool) {
+              if (targetSpool && db) {
                 const updatedWeight = Math.max(0, targetSpool.remainingWeight - usageGrams);
-                await setDoc(doc(db, 'spools', targetSpoolId), { ...targetSpool, remainingWeight: updatedWeight }, { merge: true });
+                await setDoc(doc(db, 'spools', targetSpoolId), { ...targetSpool, remainingWeight: updatedWeight }, { merge: true }).catch(() => {});
               }
             }
-            await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'AWAITING_PICKUP' }, { merge: true });
+            if (db) {
+              await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'AWAITING_PICKUP' }, { merge: true }).catch(() => {});
+            }
             
-            // Also log to print history ledger
             const logId = `log-${Date.now()}`;
             const newLog = {
               id: logId,
@@ -1364,7 +1428,9 @@ export default function App() {
                 };
               })
             };
-            await setDoc(doc(db, 'logs', logId), newLog);
+            if (db) {
+              await setDoc(doc(db, 'logs', logId), newLog).catch(() => {});
+            }
 
             setCompleteRequestModal(null);
             showToast(`Print marked completed (-${usageGrams}g). Moved to Awaiting Pickup!`, 'success');
@@ -1376,11 +1442,27 @@ export default function App() {
         <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={async (sp) => {
           const spoolId = sp.id || `sp-${Date.now()}`;
           const finalSpool = { ...sp, id: spoolId };
-          await setDoc(doc(db, 'spools', spoolId), finalSpool);
+          if (db) {
+            await setDoc(doc(db, 'spools', spoolId), finalSpool).catch(() => {});
+          } else {
+            setSpools(prev => {
+              const next = [finalSpool, ...prev.filter(s => s.id !== spoolId)];
+              localStorage.setItem('fallback_spools', JSON.stringify(next));
+              return next;
+            });
+          }
           showToast(`Saved spool ${finalSpool.barcode}`, 'success');
           setSpoolFormModal(null);
         }} onDelete={async (id) => {
-          await deleteDoc(doc(db, 'spools', id));
+          if (db) {
+            await deleteDoc(doc(db, 'spools', id)).catch(() => {});
+          } else {
+            setSpools(prev => {
+              const next = prev.filter(s => s.id !== id);
+              localStorage.setItem('fallback_spools', JSON.stringify(next));
+              return next;
+            });
+          }
           setSpoolFormModal(null);
           showToast('Spool deleted', 'info');
         }} />
@@ -1393,7 +1475,9 @@ export default function App() {
           onSave={async (savedOwner) => {
             const ownerId = savedOwner.id || `own-${Date.now()}`;
             const finalOwner = { ...savedOwner, id: ownerId };
-            await setDoc(doc(db, 'owners', ownerId), finalOwner);
+            if (db) {
+              await setDoc(doc(db, 'owners', ownerId), finalOwner).catch(() => {});
+            }
             showToast(`Saved user/owner ${finalOwner.name}`, 'success');
             if (currentUser.id === ownerId) setCurrentUser(finalOwner);
             setOwnerModal(null);
