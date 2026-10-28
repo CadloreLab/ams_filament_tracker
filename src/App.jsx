@@ -47,7 +47,34 @@ import {
 } from 'lucide-react';
 
 // ============================================================================
-// COMPREHENSIVE OFFICIAL BAMBU LAB STORE CATALOG
+// FIREBASE INITIALIZATION & CLOUD SETUP
+// ============================================================================
+import { initializeApp } from "firebase/app";
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  query 
+} from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyB9v8pe550We5iySY0g7E3ZAlVy9dwgu9c",
+  authDomain: "ams-filament-tracker-7e227.firebaseapp.com",
+  projectId: "ams-filament-tracker-7e227",
+  storageBucket: "ams-filament-tracker-7e227.firebasestorage.app",
+  messagingSenderId: "139757839455",
+  appId: "1:139757839455:web:9aed17e69a8c789418e7ea",
+  measurementId: "G-21G28ZQ5HP"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// ============================================================================
+// OFFICIAL BAMBU LAB STORE CATALOG
 // ============================================================================
 
 const MATERIALS = [
@@ -156,9 +183,6 @@ const INITIAL_OWNERS = [
   { id: 'own-4', name: 'Tarken4789', username: 'Tarken4789', pin: '1478', isAdmin: false, role: 'Tabletop & Minis', colorIdx: 3, notes: 'High-detail PLA Matte & Grey spools' }
 ];
 
-const INITIAL_SPOOLS = [];
-const INITIAL_LOGS = [];
-const INITIAL_REQUESTS = [];
 const AMS_SLOTS = ['A1', 'A2', 'A3', 'A4'];
 
 // ============================================================================
@@ -274,7 +298,7 @@ const SpoolGaugeSVG = ({ hex = '#00AE42', percentage = 75, size = 54 }) => {
 };
 
 // ============================================================================
-// MAIN APP COMPONENT
+// MAIN APP COMPONENT (FIRESTORE REAL-TIME SYNC)
 // ============================================================================
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -286,59 +310,48 @@ export default function App() {
     }
   });
 
-  const [owners, setOwners] = useState(() => {
-    try {
-      const saved = localStorage.getItem('zebra_ams_owners_v1');
-      return saved ? JSON.parse(saved) : INITIAL_OWNERS;
-    } catch {
-      return INITIAL_OWNERS;
-    }
-  });
-
-  const [spools, setSpools] = useState(() => {
-    try {
-      const saved = localStorage.getItem('zebra_ams_spools_v1');
-      return saved ? JSON.parse(saved) : INITIAL_SPOOLS;
-    } catch {
-      return INITIAL_SPOOLS;
-    }
-  });
-
-  const [logs, setLogs] = useState(() => {
-    try {
-      const saved = localStorage.getItem('zebra_ams_logs_v1');
-      return saved ? JSON.parse(saved) : INITIAL_LOGS;
-    } catch {
-      return INITIAL_LOGS;
-    }
-  });
-
-  const [printRequests, setPrintRequests] = useState(() => {
-    try {
-      const saved = localStorage.getItem('zebra_ams_requests_v1');
-      return saved ? JSON.parse(saved) : INITIAL_REQUESTS;
-    } catch {
-      return INITIAL_REQUESTS;
-    }
-  });
-
+  const [owners, setOwners] = useState(INITIAL_OWNERS);
+  const [spools, setSpools] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [printRequests, setPrintRequests] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // --- Real-time Firestore Sync Listeners ---
   useEffect(() => {
-    try { localStorage.setItem('zebra_ams_owners_v1', JSON.stringify(owners)); } catch (e) {}
-  }, [owners]);
+    const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setSpools(list);
+    });
 
-  useEffect(() => {
-    try { localStorage.setItem('zebra_ams_spools_v1', JSON.stringify(spools)); } catch (e) {}
-  }, [spools]);
+    const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
+      if (!snapshot.empty) {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setOwners(list);
+      } else {
+        // Seed default owners if collection is empty
+        INITIAL_OWNERS.forEach(o => {
+          setDoc(doc(db, 'owners', o.id), o);
+        });
+      }
+    });
 
-  useEffect(() => {
-    try { localStorage.setItem('zebra_ams_logs_v1', JSON.stringify(logs)); } catch (e) {}
-  }, [logs]);
+    const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+    });
 
-  useEffect(() => {
-    try { localStorage.setItem('zebra_ams_requests_v1', JSON.stringify(printRequests)); } catch (e) {}
-  }, [printRequests]);
+    const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+    });
+
+    return () => {
+      unsubSpools();
+      unsubOwners();
+      unsubLogs();
+      unsubRequests();
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -362,7 +375,7 @@ export default function App() {
   const [labelModal, setLabelModal] = useState(null);
   const [ownerModal, setOwnerModal] = useState(null);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
-  const [completeRequestModal, setCompleteRequestModal] = useState(null); // { request }
+  const [completeRequestModal, setCompleteRequestModal] = useState(null);
 
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
@@ -412,7 +425,7 @@ export default function App() {
   const [batchBarcodeInput, setBatchBarcodeInput] = useState('');
 
   const handleBarcodeScanned = useCallback(
-    (rawCode) => {
+    async (rawCode) => {
       const code = String(rawCode || '').trim().toUpperCase();
       if (!code) return;
 
@@ -423,8 +436,9 @@ export default function App() {
           showToast(`Barcode ${code} is already registered!`, 'error');
           return;
         }
+        const newSpoolId = `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         const newSpool = {
-          id: `sp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          id: newSpoolId,
           barcode: code,
           material: batchConfig.material,
           colorName: batchConfig.colorName,
@@ -438,7 +452,7 @@ export default function App() {
           createdAt: new Date().toISOString(),
           notes: `Batch Intake Roll #${batchSessionSpools.length + 1}`
         };
-        setSpools((prev) => [newSpool, ...prev]);
+        await setDoc(doc(db, 'spools', newSpoolId), newSpool);
         setBatchSessionSpools((prev) => [newSpool, ...prev]);
         setBatchBarcodeInput('');
         playZebraBeep('success', soundEnabled);
@@ -450,13 +464,13 @@ export default function App() {
         const targetSlot = loadSlotModal.slot;
         const found = spools.find((s) => s.barcode.toUpperCase() === code);
         if (found) {
-          setSpools((prev) =>
-            prev.map((s) => {
-              if (s.id === found.id) return { ...s, amsSlot: targetSlot };
-              if (s.amsSlot === targetSlot) return { ...s, amsSlot: null };
-              return s;
-            })
-          );
+          // Clear slot occupancy first in cloud
+          for (const s of spools) {
+            if (s.amsSlot === targetSlot) {
+              await setDoc(doc(db, 'spools', s.id), { ...s, amsSlot: null }, { merge: true });
+            }
+          }
+          await setDoc(doc(db, 'spools', found.id), { ...found, amsSlot: targetSlot }, { merge: true });
           setLoadSlotModal(null);
           playZebraBeep('success', soundEnabled);
           showToast(`Loaded ${found.barcode} into AMS Slot ${targetSlot}!`, 'success');
@@ -565,27 +579,27 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleBarcodeScanned]);
 
-  const loadSpoolIntoSlot = (spoolId, slot) => {
+  const loadSpoolIntoSlot = async (spoolId, slot) => {
     const targetSpool = spools.find((s) => s.id === spoolId);
     if (!targetSpool) return;
-    setSpools((prev) =>
-      prev.map((s) => {
-        if (s.id === spoolId) return { ...s, amsSlot: slot };
-        if (s.amsSlot === slot) return { ...s, amsSlot: null };
-        return s;
-      })
-    );
+
+    for (const s of spools) {
+      if (s.amsSlot === slot) {
+        await setDoc(doc(db, 'spools', s.id), { ...s, amsSlot: null }, { merge: true });
+      }
+    }
+    await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: slot }, { merge: true });
     playZebraBeep('success', soundEnabled);
     showToast(`Loaded ${targetSpool.barcode} into AMS Slot ${slot}`, 'success');
     setScannedSpoolModal(null);
     setLoadSlotModal(null);
   };
 
-  const unloadSpoolFromAms = (spoolId) => {
+  const unloadSpoolFromAms = async (spoolId) => {
     const targetSpool = spools.find((s) => s.id === spoolId);
     if (!targetSpool) return;
     const oldSlot = targetSpool.amsSlot;
-    setSpools((prev) => prev.map((s) => (s.id === spoolId ? { ...s, amsSlot: null } : s)));
+    await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: null }, { merge: true });
     playZebraBeep('scan', soundEnabled);
     showToast(`Unloaded ${targetSpool.barcode} from Slot ${oldSlot}`, 'info');
     setScannedSpoolModal(null);
@@ -707,7 +721,7 @@ export default function App() {
                   </h1>
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    WEDGE READY
+                    ☁️ CLOUD SYNCED
                   </span>
                 </div>
                 <p className="text-[11px] text-zinc-400 font-mono">
@@ -871,7 +885,6 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* Spool requirements */}
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {req.selectedSpoolIds.map(id => {
                               const sp = spools.find(s => s.id === id);
@@ -887,12 +900,11 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Action buttons based on status & role */}
                         <div className="flex items-center gap-2 shrink-0">
                           {needsApproval && (currentUser.isAdmin || foreignSpools.some(s => s.ownerId === currentUser.id)) && (
                             <button
-                              onClick={() => {
-                                setPrintRequests(prev => prev.map(r => r.id === req.id ? { ...r, approved: true, status: 'APPROVED' } : r));
+                              onClick={async () => {
+                                await setDoc(doc(db, 'printRequests', req.id), { ...req, approved: true, status: 'APPROVED' }, { merge: true });
                                 showToast(`Approved print request for ${req.title}!`, 'success');
                               }}
                               className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow"
@@ -903,8 +915,8 @@ export default function App() {
 
                           {req.status === 'APPROVED' && currentUser.isAdmin && (
                             <button
-                              onClick={() => {
-                                setPrintRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'PREPARING' } : r));
+                              onClick={async () => {
+                                await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true });
                                 showToast(`Moved "${req.title}" to Preparing to print!`, 'success');
                               }}
                               className="px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1 shadow"
@@ -924,8 +936,8 @@ export default function App() {
 
                           {req.status === 'AWAITING_PICKUP' && (
                             <button
-                              onClick={() => {
-                                setPrintRequests(prev => prev.filter(r => r.id !== req.id));
+                              onClick={async () => {
+                                await deleteDoc(doc(db, 'printRequests', req.id));
                                 showToast(`Archived completed print request.`, 'info');
                               }}
                               className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs"
@@ -1303,8 +1315,8 @@ export default function App() {
           spools={spools}
           currentUser={currentUser}
           onClose={() => setRequestModalOpen(false)}
-          onSubmitRequest={(newReq) => {
-            setPrintRequests(prev => [newReq, ...prev]);
+          onSubmitRequest={async (newReq) => {
+            await setDoc(doc(db, 'printRequests', newReq.id), newReq);
             setRequestModalOpen(false);
             showToast('Print request submitted to queue!', 'success');
           }}
@@ -1317,14 +1329,43 @@ export default function App() {
           request={completeRequestModal.request}
           spools={spools}
           onClose={() => setCompleteRequestModal(null)}
-          onComplete={({ usageGrams }) => {
+          onComplete={async ({ usageGrams }) => {
             const req = completeRequestModal.request;
-            // Deduct grams from first selected spool
             if (req.selectedSpoolIds.length > 0) {
               const targetSpoolId = req.selectedSpoolIds[0];
-              setSpools(prev => prev.map(s => s.id === targetSpoolId ? { ...s, remainingWeight: Math.max(0, s.remainingWeight - usageGrams) } : s));
+              const targetSpool = spools.find(s => s.id === targetSpoolId);
+              if (targetSpool) {
+                const updatedWeight = Math.max(0, targetSpool.remainingWeight - usageGrams);
+                await setDoc(doc(db, 'spools', targetSpoolId), { ...targetSpool, remainingWeight: updatedWeight }, { merge: true });
+              }
             }
-            setPrintRequests(prev => prev.map(r => r.id === req.id ? { ...r, status: 'AWAITING_PICKUP' } : r));
+            await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'AWAITING_PICKUP' }, { merge: true });
+            
+            // Also log to print history ledger
+            const logId = `log-${Date.now()}`;
+            const newLog = {
+              id: logId,
+              timestamp: new Date().toISOString(),
+              jobName: req.title,
+              status: 'SUCCESS',
+              totalGrams: usageGrams,
+              reverted: false,
+              usages: req.selectedSpoolIds.map(id => {
+                const sp = spools.find(s => s.id === id);
+                return {
+                  spoolId: id,
+                  barcode: sp?.barcode || 'BBL-XXX',
+                  material: sp?.material || 'PLA Basic',
+                  colorName: sp?.colorName || 'Color',
+                  colorHex: sp?.colorHex || '#FFFFFF',
+                  ownerId: sp?.ownerId || req.ownerId,
+                  slot: sp?.amsSlot || null,
+                  grams: usageGrams
+                };
+              })
+            };
+            await setDoc(doc(db, 'logs', logId), newLog);
+
             setCompleteRequestModal(null);
             showToast(`Print marked completed (-${usageGrams}g). Moved to Awaiting Pickup!`, 'success');
           }}
@@ -1332,17 +1373,14 @@ export default function App() {
       )}
 
       {spoolFormModal && (
-        <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={(sp) => {
-          if (spoolFormModal.isEdit) {
-            setSpools((prev) => prev.map((s) => s.id === sp.id ? sp : s));
-            showToast(`Updated spool ${sp.barcode}`, 'success');
-          } else {
-            setSpools((prev) => [sp, ...prev]);
-            showToast(`Registered new spool ${sp.barcode}`, 'success');
-          }
+        <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={async (sp) => {
+          const spoolId = sp.id || `sp-${Date.now()}`;
+          const finalSpool = { ...sp, id: spoolId };
+          await setDoc(doc(db, 'spools', spoolId), finalSpool);
+          showToast(`Saved spool ${finalSpool.barcode}`, 'success');
           setSpoolFormModal(null);
-        }} onDelete={(id) => {
-          setSpools((prev) => prev.filter(s => s.id !== id));
+        }} onDelete={async (id) => {
+          await deleteDoc(doc(db, 'spools', id));
           setSpoolFormModal(null);
           showToast('Spool deleted', 'info');
         }} />
@@ -1352,15 +1390,12 @@ export default function App() {
         <OwnerFormModal
           modalData={ownerModal}
           onClose={() => setOwnerModal(null)}
-          onSave={(savedOwner) => {
-            if (ownerModal.isEdit) {
-              setOwners((prev) => prev.map((o) => (o.id === savedOwner.id ? savedOwner : o)));
-              showToast(`Updated user/owner ${savedOwner.name}`, 'success');
-              if (currentUser.id === savedOwner.id) setCurrentUser(savedOwner);
-            } else {
-              setOwners((prev) => [...prev, { ...savedOwner, id: `own-${Date.now()}` }]);
-              showToast(`Added ${savedOwner.name} to users ledger`, 'success');
-            }
+          onSave={async (savedOwner) => {
+            const ownerId = savedOwner.id || `own-${Date.now()}`;
+            const finalOwner = { ...savedOwner, id: ownerId };
+            await setDoc(doc(db, 'owners', ownerId), finalOwner);
+            showToast(`Saved user/owner ${finalOwner.name}`, 'success');
+            if (currentUser.id === ownerId) setCurrentUser(finalOwner);
             setOwnerModal(null);
           }}
         />
@@ -1405,7 +1440,6 @@ function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitReque
     e.preventDefault();
     if (!title.trim()) return;
 
-    // Check if any selected spool belongs to another owner
     const foreignSpools = selectedSpoolIds.map(id => spools.find(s => s.id === id)).filter(s => s && s.ownerId !== currentUser.id);
     const initialStatus = foreignSpools.length > 0 ? 'WAITING_APPROVAL' : 'APPROVED';
 
