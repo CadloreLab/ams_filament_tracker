@@ -3,7 +3,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  base: './', // <-- Ensures assets load relative to index.html without 404 errors
   build: {
-    chunkSizeWarningLimit: 1000, // raises limit to 1MB to cleanly accommodate Firebase SDK bundle size
+    chunkSizeWarningLimit: 1000,
   }
 });
