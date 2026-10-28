@@ -129,7 +129,6 @@ const INITIAL_OWNERS = [
 
 const INITIAL_SPOOLS = [];
 const INITIAL_LOGS = [];
-
 const AMS_SLOTS = ['A1', 'A2', 'A3', 'A4'];
 
 // ============================================================================
@@ -1089,70 +1088,6 @@ export default function App() {
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); handleBarcodeScanned(batchBarcodeInput.trim() || generateNextBarcode()); }} className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2.5">
-                <div className="flex gap-2">
-                  <input type="text" value={batchBarcodeInput} onChange={(e) => setBatchBarcodeInput(e.target.value)} placeholder="Pull Zebra trigger or auto-generate..." className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
-                  <button type="submit" className="px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-extrabold text-xs">Scan / Save</button>
-                </div>
-              </form>
-
-              {batchSessionSpools.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-xs font-mono uppercase text-zinc-400">Scanned ({batchSessionSpools.length}):</div>
-                  <div className="max-h-32 overflow-y-auto space-y-1">
-                    {batchSessionSpools.map((sp) => (
-                      <div key={sp.id} className="px-3 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-xs flex justify-between">
-                        <span className="font-mono text-amber-300">{sp.barcode} - {sp.material} ({sp.colorName})</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {spoolFormModal && (
-        <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={(sp) => { setSpools((prev) => [sp, ...prev]); setSpoolFormModal(null); }} onDelete={(id) => setSpools((prev) => prev.filter(s => s.id !== id))} />
-      )}
-
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-zinc-900/95 backdrop-blur border-t border-zinc-800">
-        <div className="max-w-5xl mx-auto grid grid-cols-5 px-2 py-1.5 gap-1">
-          {[
-            { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4` },
-            { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length },
-            { id: 'owners', label: 'Owners', icon: Users, badge: owners.length },
-            { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length },
-            { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: currentUser.isAdmin ? '★' : '' }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition ${active ? 'bg-amber-500/15 text-amber-400 font-extrabold border border-amber-500/30' : 'text-zinc-400 hover:text-zinc-200'}`}>
-                <div className="relative flex items-center justify-center">
-                  <Icon className="w-5 h-5" />
-                  <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono ${active ? 'bg-amber-500 text-zinc-950 font-bold' : 'bg-zinc-800 text-zinc-400'}`}>{tab.badge}</span>
-                </div>
-                <span className="text-[10px] sm:text-[11px] tracking-tight">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-    </div>
-  );
-}
-
-function SpoolFormModal({ modalData, owners, onClose, onSave, onDelete }) {
-  const [form, setForm] = useState(modalData.spool);
-  return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
-          <span className="font-extrabold text-sm text-white uppercase">Register Spool</span>
-          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
-        </div>
-        <form onSubmit={(e) => { e.preventDefault(); handleBarcodeScanned(batchBarcodeInput.trim() || generateNextBarcode()); }} className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2.5">
                 <div className="flex gap-2">
                   <input type="text" value={batchBarcodeInput} onChange={(e) => setBatchBarcodeInput(e.target.value)} placeholder="Pull Zebra trigger or auto-generate..." className="flex-1 px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
                   <button type="submit" className="px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-extrabold text-xs">Scan / Save</button>
