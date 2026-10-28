@@ -982,9 +982,16 @@ export default function App() {
                           <p className="text-xs text-zinc-400 font-mono">Username: <span className="text-white">{person.username}</span></p>
                         </div>
                       </div>
-                      <button onClick={() => { setOwnerFilter(person.id); setActiveTab('spools'); }} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200">
-                        Filter Spools ({person.spoolCount})
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setOwnerFilter(person.id); setActiveTab('spools'); }} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200">
+                          Filter Spools ({person.spoolCount})
+                        </button>
+                        {(currentUser.isAdmin || currentUser.id === person.id) && (
+                          <button onClick={() => setOwnerModal({ isEdit: true, owner: { ...person } })} className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Edit User">
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1115,6 +1122,24 @@ export default function App() {
         <SpoolFormModal modalData={spoolFormModal} owners={owners} onClose={() => setSpoolFormModal(null)} onSave={(sp) => { setSpools((prev) => [sp, ...prev]); setSpoolFormModal(null); }} onDelete={(id) => setSpools((prev) => prev.filter(s => s.id !== id))} />
       )}
 
+      {ownerModal && (
+        <OwnerFormModal
+          modalData={ownerModal}
+          onClose={() => setOwnerModal(null)}
+          onSave={(savedOwner) => {
+            if (ownerModal.isEdit) {
+              setOwners((prev) => prev.map((o) => (o.id === savedOwner.id ? savedOwner : o)));
+              showToast(`Updated user/owner ${savedOwner.name}`, 'success');
+              if (currentUser.id === savedOwner.id) setCurrentUser(savedOwner);
+            } else {
+              setOwners((prev) => [...prev, { ...savedOwner, id: `own-${Date.now()}` }]);
+              showToast(`Added ${savedOwner.name} to users ledger`, 'success');
+            }
+            setOwnerModal(null);
+          }}
+        />
+      )}
+
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-zinc-900/95 backdrop-blur border-t border-zinc-800">
         <div className="max-w-5xl mx-auto grid grid-cols-5 px-2 py-1.5 gap-1">
           {[
@@ -1157,6 +1182,57 @@ function SpoolFormModal({ modalData, owners, onClose, onSave, onDelete }) {
             {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
           </select>
           <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 font-extrabold text-xs uppercase text-zinc-950">Save Spool</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function OwnerFormModal({ modalData, onClose, onSave }) {
+  const [form, setForm] = useState(modalData.owner);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
+          <span className="font-bold text-sm text-white">{modalData.isEdit ? 'Edit User / Owner' : 'Add New User & Login'}</span>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); if (!form.name.trim()) return; onSave(form); }} className="p-4 space-y-3">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Full Name</label>
+            <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g., Sam Rivera" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1">Login Username</label>
+              <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} placeholder="e.g., sam" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 block mb-1">Login PIN / Password</label>
+              <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} placeholder="e.g., 1234" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
+            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} placeholder="e.g., Co-Op Friend" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0" />
+            <label htmlFor="isAdminCheck" className="text-xs text-zinc-300">Grant Administrator Privileges</label>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1.5">Badge Color Tag</label>
+            <div className="flex gap-2">
+              {OWNER_COLORS.map((c, idx) => (
+                <button key={c.name} type="button" onClick={() => setForm({ ...form, colorIdx: idx })} className={`w-8 h-8 rounded-lg border ${c.bg} ${c.border} flex items-center justify-center ${form.colorIdx === idx ? 'ring-2 ring-white' : ''}`}>
+                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: c.hex }} />
+                </button>
+              ))}
+            </div>
+          </div>
+          <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase">
+            Save User & Credentials
+          </button>
         </form>
       </div>
     </div>
