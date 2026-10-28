@@ -8,32 +8,19 @@ import {
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // Authentication & Users State
-  const [currentUser, setCurrentUser] = useState(() => {
-    const saved = localStorage.getItem('ams_current_user');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [currentUser, setCurrentUser] = useState(null);
 
-  const [owners, setOwners] = useState(() => {
-    const saved = localStorage.getItem('ams_owners');
-    return saved ? JSON.parse(saved) : [
-      { id: 'owner-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, defaultColor: '#3b82f6' },
-      { id: 'owner-2', name: 'Stephanie', username: 'steph', pin: '5678', isAdmin: false, defaultColor: '#ec4899' }
-    ];
-  });
+  const [owners, setOwners] = useState([
+    { id: 'owner-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, defaultColor: '#3b82f6' },
+    { id: 'owner-2', name: 'Stephanie', username: 'steph', pin: '5678', isAdmin: false, defaultColor: '#ec4899' }
+  ]);
 
-  const [spools, setSpools] = useState(() => {
-    const saved = localStorage.getItem('ams_spools');
-    return saved ? JSON.parse(saved) : [
-      { id: 'ROLL-101', ownerId: 'owner-1', material: 'PLA Basic', color: 'Black', initialWeight: 1000, remainingWeight: 850, status: 'active', totalUsed: 150 },
-      { id: 'ROLL-102', ownerId: 'owner-2', material: 'PLA-CF', color: 'Dark Gray', initialWeight: 1000, remainingWeight: 1000, status: 'storage', totalUsed: 0 }
-    ];
-  });
+  const [spools, setSpools] = useState([
+    { id: 'ROLL-101', ownerId: 'owner-1', material: 'PLA Basic', color: 'Black', initialWeight: 1000, remainingWeight: 850, status: 'active', totalUsed: 150 },
+    { id: 'ROLL-102', ownerId: 'owner-2', material: 'PLA-CF', color: 'Dark Gray', initialWeight: 1000, remainingWeight: 1000, status: 'storage', totalUsed: 0 }
+  ]);
 
-  const [amsSlots, setAmsSlots] = useState(() => {
-    const saved = localStorage.getItem('ams_slots');
-    return saved ? JSON.parse(saved) : { A1: 'ROLL-101', A2: 'ROLL-102', A3: null, A4: null };
-  });
+  const [amsSlots, setAmsSlots] = useState({ A1: 'ROLL-101', A2: 'ROLL-102', A3: null, A4: null });
 
   const [scanBuffer, setScanBuffer] = useState('');
   const [scanMode, setScanMode] = useState('auto');
@@ -43,22 +30,9 @@ export default function App() {
   const [printSlotTarget, setPrintSlotTarget] = useState('A1');
   const [printGramsUsed, setPrintGramsUsed] = useState(25);
 
-  // Sync state to local storage
-  useEffect(() => {
-    localStorage.setItem('ams_owners', JSON.stringify(owners));
-    localStorage.setItem('ams_spools', JSON.stringify(spools));
-    localStorage.setItem('ams_slots', JSON.stringify(amsSlots));
-    if (currentUser) {
-      localStorage.setItem('ams_current_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('ams_current_user');
-    }
-  }, [owners, spools, amsSlots, currentUser]);
-
   const barcodeBufferRef = useRef('');
   const lastKeyTimeRef = useRef(Date.now());
 
-  // Zebra Scanner & Hardware Barcode Listener
   useEffect(() => {
     const handleKeyDown = (e) => {
       const currentTime = Date.now();
@@ -126,10 +100,10 @@ export default function App() {
   const handleLogin = (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    const username = formData.get('username').trim();
+    const username = formData.get('username').trim().toLowerCase();
     const pin = formData.get('pin').trim();
 
-    const found = owners.find(o => o.username === username && o.pin === pin);
+    const found = owners.find(o => o.username.toLowerCase() === username && o.pin === pin);
     if (found) {
       setCurrentUser(found);
     } else {
@@ -143,8 +117,8 @@ export default function App() {
     const newOwner = {
       id: 'owner-' + Date.now(),
       name: formData.get('name'),
-      username: formData.get('username'),
-      pin: formData.get('pin'),
+      username: formData.get('username').trim().toLowerCase(),
+      pin: formData.get('pin').trim(),
       isAdmin: formData.get('isAdmin') === 'on',
       defaultColor: '#10b981'
     };
@@ -204,7 +178,6 @@ export default function App() {
 
   const getOwnerName = (ownerId) => owners.find(o => o.id === ownerId)?.name || 'Unassigned';
 
-  // If not logged in, show login screen
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
@@ -375,8 +348,8 @@ export default function App() {
             <h2 className="text-lg font-bold text-white">System Admin Controls</h2>
             <p className="text-xs text-slate-400">Reset local storage or perform system maintenance.</p>
             {currentUser.isAdmin ? (
-              <button onClick={() => { if(confirm('Factory reset will clear all local spools and logs. Proceed?')) { localStorage.clear(); window.location.reload(); } }} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-xs font-bold">
-                Factory Reset All Data
+              <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl text-xs font-bold">
+                Reset App State & Reload
               </button>
             ) : (
               <p className="text-xs text-amber-400 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">Admin access required to perform system resets.</p>
