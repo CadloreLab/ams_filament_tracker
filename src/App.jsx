@@ -62,13 +62,13 @@ import {
 } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyB9v8pe550We5iySY0g7E3ZAlVy9dwgu9c",
-  authDomain: "ams-filament-tracker-7e227.firebaseapp.com",
-  projectId: "ams-filament-tracker-7e227",
-  storageBucket: "ams-filament-tracker-7e227.firebasestorage.app",
-  messagingSenderId: "139757839455",
-  appId: "1:139757839455:web:9aed17e69a8c789418e7ea",
-  measurementId: "G-21G28ZQ5HP"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 let db = null;
@@ -1395,6 +1395,28 @@ export default function App() {
         </div>
       )}
 
+      {denyModal && (
+        <DenySpoolModal
+          request={denyModal.request}
+          spoolId={denyModal.spoolId}
+          spools={spools}
+          onClose={() => setDenyModal(null)}
+          onDeny={async ({ request, spoolId, reason }) => {
+            const updatedDenied = [...(request.deniedSpoolIds || []), spoolId];
+            if (db) {
+              await setDoc(doc(db, 'printRequests', request.id), {
+                ...request,
+                deniedSpoolIds: updatedDenied,
+                status: 'DENIED',
+                denyReason: reason || 'Spool owner denied request.'
+              }, { merge: true }).catch(() => {});
+            }
+            setDenyModal(null);
+            showToast('Spool request denied.', 'warning');
+          }}
+        />
+      )}
+
       {loadSlotModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
           <div className="bg-zinc-900 border border-amber-500/50 rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
@@ -1518,7 +1540,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Print Request Modal */}
       {requestModalOpen && (
         <PrintRequestModal
           owners={owners}
@@ -1535,7 +1556,6 @@ export default function App() {
         />
       )}
 
-      {/* Complete Request Modal */}
       {completeRequestModal && (
         <CompleteRequestModal
           request={completeRequestModal.request}
@@ -1623,7 +1643,12 @@ export default function App() {
           onClose={() => setOwnerModal(null)}
           onSave={async (savedOwner) => {
             const ownerId = savedOwner.id || `own-${Date.now()}`;
-            const finalOwner = { ...savedOwner, id: ownerId };
+            // Strict security check: non-admin users cannot grant themselves admin privileges
+            const existingOwner = owners.find(o => o.id === ownerId);
+            const isCurrentlyAdmin = existingOwner ? existingOwner.isAdmin : false;
+            const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : isCurrentlyAdmin;
+
+            const finalOwner = { ...savedOwner, id: ownerId, isAdmin: finalIsAdmin };
             if (db) {
               await setDoc(doc(db, 'owners', ownerId), finalOwner).catch(() => {});
             }
@@ -1662,9 +1687,6 @@ export default function App() {
   );
 }
 
-// ============================================================================
-// DENY SPOOL MODAL WITH OPTIONAL REASON
-// ============================================================================
 function DenySpoolModal({ request, spoolId, spools, onClose, onDeny }) {
   const [reason, setReason] = useState('');
   const spool = spools.find(s => s.id === spoolId);
@@ -1698,9 +1720,6 @@ function DenySpoolModal({ request, spoolId, spools, onClose, onDeny }) {
   );
 }
 
-// ============================================================================
-// PRINT REQUEST SUBMISSION MODAL
-// ============================================================================
 function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitRequest }) {
   const [title, setTitle] = useState('');
   const [makerWorldUrl, setMakerWorldUrl] = useState('');
@@ -1806,9 +1825,6 @@ function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitReque
   );
 }
 
-// ============================================================================
-// COMPLETE PRINT REQUEST MODAL
-// ============================================================================
 function CompleteRequestModal({ request, spools, onClose, onComplete }) {
   const [usageGrams, setUsageGrams] = useState(50);
 
@@ -1926,9 +1942,7 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
         <form onSubmit={(e) => { 
           e.preventDefault(); 
           if (!form.name.trim()) return; 
-          // Guard: Prevent users from granting themselves administrator privileges if not already admin
-          const finalForm = { ...form };
-          onSave(finalForm); 
+          onSave(form); 
         }} className="p-4 space-y-3">
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Full Name</label>
@@ -1937,20 +1951,20 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs text-zinc-400 block mb-1">Login Username</label>
-              <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+              <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
             <div>
               <label className="text-xs text-zinc-400 block mb-1">Login PIN / Password</label>
-              <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+              <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
-            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0" />
-            <label htmlFor="isAdminCheck" className="text-xs text-zinc-300">Grant Administrator Privileges</label>
+            <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!form.isAdmin} onChange={(e) => {}} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0 opacity-60 cursor-not-allowed" />
+            <label htmlFor="isAdminCheck" className="text-xs text-zinc-400 select-none">Grant Administrator Privileges (Locked)</label>
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1.5">Badge Color Tag</label>
