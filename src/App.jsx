@@ -186,6 +186,29 @@ const OWNER_COLORS = [
 
 const AMS_SLOTS = ['A1', 'A2', 'A3', 'A4'];
 
+// Helper for filament weight threshold styling
+const getWeightColorConfig = (grams) => {
+  if (grams > 250) {
+    return {
+      textClass: 'text-emerald-400 font-bold',
+      bgClass: 'bg-emerald-500',
+      hex: '#22C55E' // Bright Green
+    };
+  } else if (grams > 50) {
+    return {
+      textClass: 'text-yellow-400 font-bold',
+      bgClass: 'bg-yellow-400',
+      hex: '#FACC15' // Solid Yellow
+    };
+  } else {
+    return {
+      textClass: 'text-red-500 font-bold animate-pulse',
+      bgClass: 'bg-red-500',
+      hex: '#EF4444' // Bright Red
+    };
+  }
+};
+
 // ============================================================================
 // SOUND SYNTHESIZER
 // ============================================================================
@@ -318,10 +341,13 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
 
-  // --- Real-time Firestore Sync (Strictly Database) ---
+  // --- Real-time Firestore Sync ---
   useEffect(() => {
     if (!db) {
-      console.warn("Firestore db is not initialized. Check your environment variables.");
+      setOwners([
+        { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '072518', isAdmin: true, role: 'Printer Operator', colorIdx: 5 },
+        { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1 }
+      ]);
       return;
     }
 
@@ -931,7 +957,7 @@ export default function App() {
                 const owner = spool ? ownerMap[spool.ownerId] : null;
                 const ownerStyle = spool ? getOwnerStyle(spool.ownerId) : null;
                 const pct = spool ? Math.round((spool.remainingWeight / spool.initialWeight) * 100) : 0;
-                const isLow = spool && spool.remainingWeight < 200;
+                const weightCfg = spool ? getWeightColorConfig(spool.remainingWeight) : null;
 
                 return (
                   <div key={slotKey} className={`rounded-2xl border transition-all overflow-hidden flex flex-col justify-between ${spool ? 'bg-zinc-900 border-zinc-700/90 shadow-lg' : 'bg-zinc-900/50 border-dashed border-zinc-800 hover:border-zinc-700'}`}>
@@ -946,7 +972,7 @@ export default function App() {
                     {spool ? (
                       <div className="p-4 space-y-3.5">
                         <div className="flex items-center gap-3.5">
-                          <SpoolGaugeSVG hex={spool.colorHex} percentage={pct} size={62} />
+                          <SpoolGaugeSVG hex={weightCfg.hex} percentage={pct} size={62} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0" style={{ backgroundColor: spool.colorHex }} />
@@ -955,11 +981,11 @@ export default function App() {
                             <p className="text-xs text-zinc-300 font-medium truncate">{spool.colorName} • {spool.brand}</p>
                             <div className="mt-2.5">
                               <div className="flex items-baseline justify-between text-xs font-mono mb-1">
-                                <span className={isLow ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>{spool.remainingWeight}g left</span>
+                                <span className={weightCfg.textClass}>{spool.remainingWeight}g left</span>
                                 <span className="text-zinc-500">of {spool.initialWeight}g</span>
                               </div>
                               <div className="w-full h-2.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800">
-                                <div className={`h-full rounded-full transition-all ${isLow ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
+                                <div className={`h-full rounded-full transition-all ${weightCfg.bgClass}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
                               </div>
                             </div>
                           </div>
@@ -1202,19 +1228,20 @@ export default function App() {
                   const owner = ownerMap[spool.ownerId];
                   const ownerStyle = getOwnerStyle(spool.ownerId);
                   const pct = Math.round((spool.remainingWeight / spool.initialWeight) * 100);
+                  const weightCfg = getWeightColorConfig(spool.remainingWeight);
 
                   return (
                     <div key={spool.id} className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-3 min-w-0">
-                          <SpoolGaugeSVG hex={spool.colorHex} percentage={pct} size={52} />
+                          <SpoolGaugeSVG hex={weightCfg.hex} percentage={pct} size={52} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="px-2 py-0.5 rounded bg-zinc-950 border border-zinc-700 font-mono font-bold text-[11px] text-amber-400">{spool.barcode}</span>
                               {spool.amsSlot ? <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 font-mono font-bold text-[11px] text-emerald-300">AMS {spool.amsSlot}</span> : <span className="px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-[10px]">STORAGE</span>}
                             </div>
                             <h3 className="text-sm font-extrabold text-white mt-1 truncate">{spool.material} — {spool.colorName}</h3>
-                            <p className="text-[11px] text-zinc-400 truncate">{spool.brand} • {spool.remainingWeight}g / {spool.initialWeight}g left</p>
+                            <p className="text-[11px] text-zinc-400 truncate">{spool.brand} • <span className={weightCfg.textClass}>{spool.remainingWeight}g</span> / {spool.initialWeight}g left</p>
                           </div>
                         </div>
                         {owner && <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shrink-0 ${ownerStyle.bg} ${ownerStyle.text} ${ownerStyle.border}`}>{owner.name}</span>}
