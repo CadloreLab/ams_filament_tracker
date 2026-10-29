@@ -718,11 +718,11 @@ export default function App() {
           >
             <div>
               <label className="text-xs font-mono text-zinc-400 block mb-1">Username</label>
-              <input name="username" defaultValue="admin" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
+              <input name="username" defaultValue="" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
             </div>
             <div>
               <label className="text-xs font-mono text-zinc-400 block mb-1">PIN / Password</label>
-              <input type="password" name="pin" defaultValue="1234" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
+              <input type="password" name="pin" defaultValue="" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
             </div>
             <button type="submit" className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-95 transition">
               Sign In
@@ -1115,7 +1115,7 @@ export default function App() {
                             <button
                               onClick={async () => {
                                 if (db) {
-                                  await deleteDoc(doc(db, 'printRequests', req.id)).catch(() => {});
+                                  await deleteDoc(doc(db, 'printRequests', req.id));
                                 }
                                 showToast(`Archived print request.`, 'info');
                               }}
@@ -1265,7 +1265,7 @@ export default function App() {
                             <span className="text-xs text-zinc-400">({person.role})</span>
                             {person.isAdmin && <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 font-bold">Admin</span>}
                           </div>
-                          <p className="text-xs text-zinc-400 font-mono">Username: <span className="text-white">{person.username}</span></p>
+                          <p className="text-xs text-zinc-400 font-mono">Username: <span className="text-white">{person.username}</span> • PIN: <span className="text-amber-400 font-bold">{person.pin}</span></p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1595,9 +1595,16 @@ export default function App() {
             const isCurrentlyAdmin = existingOwner ? existingOwner.isAdmin : false;
             const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : isCurrentlyAdmin;
 
-            const finalOwner = { ...savedOwner, id: ownerId, isAdmin: finalIsAdmin };
+            // Preserve existing database fields (like spools array, counts, etc.) while updating credentials
+            const finalOwner = {
+              ...(existingOwner || {}),
+              ...savedOwner,
+              id: ownerId,
+              isAdmin: finalIsAdmin
+            };
+
             if (db) {
-              await setDoc(doc(db, 'owners', ownerId), finalOwner).catch(() => {});
+              await setDoc(doc(db, 'owners', ownerId), finalOwner, { merge: true }).catch(() => {});
             }
             showToast(`Saved user/owner ${finalOwner.name}`, 'success');
             if (currentUser.id === ownerId) setCurrentUser(finalOwner);
@@ -1907,7 +1914,7 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
-            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!form.isAdmin} onChange={(e) => {}} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0 opacity-60 cursor-not-allowed" />
