@@ -191,20 +191,17 @@ const getWeightColorConfig = (grams) => {
   if (grams > 250) {
     return {
       textClass: 'text-emerald-400 font-bold',
-      bgClass: 'bg-emerald-500',
-      hex: '#22C55E' // Bright Green
+      bgClass: 'bg-emerald-500'
     };
   } else if (grams > 50) {
     return {
       textClass: 'text-yellow-400 font-bold',
-      bgClass: 'bg-yellow-400',
-      hex: '#FACC15' // Solid Yellow
+      bgClass: 'bg-yellow-400'
     };
   } else {
     return {
       textClass: 'text-red-500 font-bold animate-pulse',
-      bgClass: 'bg-red-500',
-      hex: '#EF4444' // Bright Red
+      bgClass: 'bg-red-500'
     };
   }
 };
@@ -972,7 +969,7 @@ export default function App() {
                     {spool ? (
                       <div className="p-4 space-y-3.5">
                         <div className="flex items-center gap-3.5">
-                          <SpoolGaugeSVG hex={weightCfg.hex} percentage={pct} size={62} />
+                          <SpoolGaugeSVG hex={spool.colorHex || '#00AE42'} percentage={pct} size={62} />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="w-3.5 h-3.5 rounded-full border border-white/30 shrink-0" style={{ backgroundColor: spool.colorHex }} />
@@ -1234,7 +1231,7 @@ export default function App() {
                     <div key={spool.id} className="bg-zinc-900 border border-zinc-800 hover:border-zinc-700 rounded-2xl p-3.5 flex flex-col justify-between gap-3 shadow">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-center gap-3 min-w-0">
-                          <SpoolGaugeSVG hex={weightCfg.hex} percentage={pct} size={52} />
+                          <SpoolGaugeSVG hex={spool.colorHex || '#00AE42'} percentage={pct} size={52} />
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="px-2 py-0.5 rounded bg-zinc-950 border border-zinc-700 font-mono font-bold text-[11px] text-amber-400">{spool.barcode}</span>
@@ -1959,7 +1956,7 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Notes / Description</label>
-            <input type="text" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <input type="text" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3.5, py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div className="flex items-center gap-2 pt-1">
             <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!form.isAdmin} onChange={(e) => {}} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0 opacity-60 cursor-not-allowed" />
