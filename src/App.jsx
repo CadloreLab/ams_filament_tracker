@@ -318,9 +318,15 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
 
-  // --- Real-time Firestore Sync for Owners & Collections ---
+  // --- Real-time Firestore Sync ---
   useEffect(() => {
-    if (!db) return;
+    if (!db) {
+      // Fallback local mock if firebase is uninitialized
+      setOwners([
+        { id: 'own-1', name: 'Charles (Admin)', username: 'Fallback', pin: '000000', isAdmin: true, role: 'Printer Operator', colorIdx: 5 }
+      ]);
+      return;
+    }
 
     try {
       const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
@@ -329,7 +335,20 @@ export default function App() {
       }, (err) => console.error("Spools sync error:", err));
 
       const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        const list = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || 'Unknown',
+            username: data.username || '',
+            pin: String(data.pin || ''),
+            isAdmin: Boolean(data.isAdmin),
+            role: data.role || 'Member',
+            colorIdx: Number(data.colorIdx ?? 0),
+            notes: data.notes || '',
+            ...data
+          };
+        });
         setOwners(list);
       }, (err) => console.error("Owners sync error:", err));
 
@@ -729,7 +748,7 @@ export default function App() {
             </button>
           </form>
           <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-center text-xs text-zinc-400 font-mono space-y-1">
-            <div>Default Admin: <strong className="text-amber-400">admin</strong> / PIN: <strong className="text-amber-400">072518</strong></div>
+            <div>Contact Admin for Password Reset!</strong></div>
           </div>
         </div>
       </div>
@@ -1590,12 +1609,10 @@ export default function App() {
           modalData={ownerModal}
           onClose={() => setOwnerModal(null)}
           onSave={async (savedOwner) => {
-            const ownerId = savedOwner.id || `own-${Date.now()}`;
+            const ownerId = savedOwner.id || `own-${owners.length + 1}`;
             const existingOwner = owners.find(o => o.id === ownerId);
-            const isCurrentlyAdmin = existingOwner ? existingOwner.isAdmin : false;
-            const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : isCurrentlyAdmin;
+            const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : (existingOwner ? existingOwner.isAdmin : false);
 
-            // Preserve existing database fields (like spools array, counts, etc.) while updating credentials
             const finalOwner = {
               ...(existingOwner || {}),
               ...savedOwner,
@@ -1916,19 +1933,13 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
             <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
             <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
           </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Notes / Description</label>
+            <input type="text" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+          </div>
           <div className="flex items-center gap-2 pt-1">
             <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!form.isAdmin} onChange={(e) => {}} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0 opacity-60 cursor-not-allowed" />
             <label htmlFor="isAdminCheck" className="text-xs text-zinc-400 select-none">Grant Administrator Privileges (Locked)</label>
-          </div>
-          <div>
-            <label className="text-xs text-zinc-400 block mb-1.5">Badge Color Tag</label>
-            <div className="flex gap-2">
-              {OWNER_COLORS.map((c, idx) => (
-                <button key={c.name} type="button" onClick={() => setForm({ ...form, colorIdx: idx })} className={`w-8 h-8 rounded-lg border ${c.bg} ${c.border} flex items-center justify-center ${form.colorIdx === idx ? 'ring-2 ring-white' : ''}`}>
-                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: c.hex }} />
-                </button>
-              ))}
-            </div>
           </div>
           <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase">
             Save User & Credentials
