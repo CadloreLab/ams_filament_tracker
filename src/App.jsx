@@ -321,9 +321,9 @@ export default function App() {
   // --- Real-time Firestore Sync ---
   useEffect(() => {
     if (!db) {
-      // Fallback local mock if firebase is uninitialized
       setOwners([
-        { id: 'own-1', name: 'Charles (Admin)', username: 'Fallback', pin: '000000', isAdmin: true, role: 'Printer Operator', colorIdx: 5 }
+        { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '072518', isAdmin: true, role: 'Printer Operator', colorIdx: 5 },
+        { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1 }
       ]);
       return;
     }
@@ -737,18 +737,18 @@ export default function App() {
           >
             <div>
               <label className="text-xs font-mono text-zinc-400 block mb-1">Username</label>
-              <input name="username" defaultValue="" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
+              <input name="username" defaultValue="admin" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
             </div>
             <div>
-              <label className="text-xs font-mono text-zinc-400 block mb-1">PIN / Password</label>
-              <input type="password" name="pin" defaultValue="" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
+              <label className="text-xs font-mono text-zinc-400 block mb-1">Password</label>
+              <input type="password" name="pin" defaultValue="072518" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
             </div>
             <button type="submit" className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-95 transition">
               Sign In
             </button>
           </form>
           <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-center text-xs text-zinc-400 font-mono space-y-1">
-            <div>Contact Admin for Password Reset!</strong></div>
+            <div>Contact Admin for a password reset!</div>
           </div>
         </div>
       </div>
@@ -1925,13 +1925,13 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
               <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
             <div>
-              <label className="text-xs text-zinc-400 block mb-1">Login PIN / Password</label>
+              <label className="text-xs text-zinc-400 block mb-1">Login Password</label>
               <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
-            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Notes / Description</label>
