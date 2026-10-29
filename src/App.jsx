@@ -73,8 +73,10 @@ const firebaseConfig = {
 
 let db = null;
 try {
-  const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
-  db = getFirestore(app);
+  if (firebaseConfig.apiKey) {
+    const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
+    db = getFirestore(app);
+  }
 } catch (e) {
   console.error("Firebase init error:", e);
 }
@@ -1643,7 +1645,6 @@ export default function App() {
           onClose={() => setOwnerModal(null)}
           onSave={async (savedOwner) => {
             const ownerId = savedOwner.id || `own-${Date.now()}`;
-            // Strict security check: non-admin users cannot grant themselves admin privileges
             const existingOwner = owners.find(o => o.id === ownerId);
             const isCurrentlyAdmin = existingOwner ? existingOwner.isAdmin : false;
             const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : isCurrentlyAdmin;
