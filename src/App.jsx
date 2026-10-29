@@ -318,13 +318,10 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
 
-  // --- Real-time Firestore Sync ---
+  // --- Real-time Firestore Sync (Strictly Database) ---
   useEffect(() => {
     if (!db) {
-      setOwners([
-        { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '072518', isAdmin: true, role: 'Printer Operator', colorIdx: 5 },
-        { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1 }
-      ]);
+      console.warn("Firestore db is not initialized. Check your environment variables.");
       return;
     }
 
@@ -730,7 +727,7 @@ export default function App() {
                 showToast(`Welcome back, ${found.name}!`, 'success');
               } else {
                 playZebraBeep('error', soundEnabled);
-                showToast('Invalid username or PIN code.', 'error');
+                showToast('Invalid username or password.', 'error');
               }
             }}
             className="space-y-4"
@@ -741,7 +738,7 @@ export default function App() {
             </div>
             <div>
               <label className="text-xs font-mono text-zinc-400 block mb-1">Password</label>
-              <input type="password" name="pin" defaultValue="072518" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
+              <input type="password" name="pin" required className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 focus:border-amber-400 rounded-xl text-sm font-mono text-white focus:outline-none" />
             </div>
             <button type="submit" className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20 active:scale-95 transition">
               Sign In
@@ -1284,7 +1281,7 @@ export default function App() {
                             <span className="text-xs text-zinc-400">({person.role})</span>
                             {person.isAdmin && <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 font-bold">Admin</span>}
                           </div>
-                          <p className="text-xs text-zinc-400 font-mono">Username: <span className="text-white">{person.username}</span> • PIN: <span className="text-amber-400 font-bold">{person.pin}</span></p>
+                          <p className="text-xs text-zinc-400 font-mono">Username: <span className="text-white">{person.username}</span> • Password: <span className="text-amber-400 font-bold">{person.pin}</span></p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
