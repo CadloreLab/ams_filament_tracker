@@ -184,13 +184,6 @@ const OWNER_COLORS = [
   { name: 'Blue', bg: 'bg-blue-500/20', text: 'text-blue-300', border: 'border-blue-500/50', hex: '#3B82F6' }
 ];
 
-const INITIAL_OWNERS = [
-  { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, role: 'Printer Owner', colorIdx: 0, notes: 'Primary printer operator & host' },
-  { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1, notes: 'Prints functional ABS/CF car parts' },
-  { id: 'own-3', name: 'Luner89', username: 'Luner89', pin: '6789', isAdmin: false, role: 'Cosplay & Props', colorIdx: 2, notes: 'Mostly PLA Basic & Tough+ rolls' },
-  { id: 'own-4', name: 'Tarken4789', username: 'Tarken4789', pin: '1478', isAdmin: false, role: 'Tabletop & Minis', colorIdx: 3, notes: 'High-detail PLA Matte & Grey spools' }
-];
-
 const AMS_SLOTS = ['A1', 'A2', 'A3', 'A4'];
 
 // ============================================================================
@@ -318,7 +311,7 @@ export default function App() {
     }
   });
 
-  const [owners, setOwners] = useState(INITIAL_OWNERS);
+  const [owners, setOwners] = useState([]);
   const [spools, setSpools] = useState([]);
   const [logs, setLogs] = useState([]);
   const [printRequests, setPrintRequests] = useState([]);
@@ -331,6 +324,18 @@ export default function App() {
       try {
         const s = localStorage.getItem('fallback_spools');
         if (s) setSpools(JSON.parse(s));
+        const o = localStorage.getItem('fallback_owners');
+        if (o) setOwners(JSON.parse(o));
+        else {
+          const defaults = [
+            { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, role: 'Printer Owner', colorIdx: 0, notes: 'Primary printer operator & host' },
+            { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1, notes: 'Prints functional ABS/CF car parts' },
+            { id: 'own-3', name: 'Luner89', username: 'Luner89', pin: '6789', isAdmin: false, role: 'Cosplay & Props', colorIdx: 2, notes: 'Mostly PLA Basic & Tough+ rolls' },
+            { id: 'own-4', name: 'Tarken4789', username: 'Tarken4789', pin: '1478', isAdmin: false, role: 'Tabletop & Minis', colorIdx: 3, notes: 'High-detail PLA Matte & Grey spools' }
+          ];
+          setOwners(defaults);
+          localStorage.setItem('fallback_owners', JSON.stringify(defaults));
+        }
       } catch (e) {}
       return;
     }
@@ -341,14 +346,21 @@ export default function App() {
         setSpools(list);
       }, (err) => console.error("Spools sync error:", err));
 
-      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
+      const unsubOwners = onSnapshot(collection(db, 'owners'), async (snapshot) => {
         if (!snapshot.empty) {
           const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
           setOwners(list);
         } else {
-          INITIAL_OWNERS.forEach(o => {
-            setDoc(doc(db, 'owners', o.id), o).catch(() => {});
-          });
+          // Seed initial database owners if collection is empty
+          const defaults = [
+            { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, role: 'Printer Owner', colorIdx: 0, notes: 'Primary printer operator & host' },
+            { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1, notes: 'Prints functional ABS/CF car parts' },
+            { id: 'own-3', name: 'Luner89', username: 'Luner89', pin: '6789', isAdmin: false, role: 'Cosplay & Props', colorIdx: 2, notes: 'Mostly PLA Basic & Tough+ rolls' },
+            { id: 'own-4', name: 'Tarken4789', username: 'Tarken4789', pin: '1478', isAdmin: false, role: 'Tabletop & Minis', colorIdx: 3, notes: 'High-detail PLA Matte & Grey spools' }
+          ];
+          for (const o of defaults) {
+            await setDoc(doc(db, 'owners', o.id), o).catch(() => {});
+          }
         }
       }, (err) => console.error("Owners sync error:", err));
 
@@ -1652,6 +1664,12 @@ export default function App() {
             const finalOwner = { ...savedOwner, id: ownerId, isAdmin: finalIsAdmin };
             if (db) {
               await setDoc(doc(db, 'owners', ownerId), finalOwner).catch(() => {});
+            } else {
+              setOwners(prev => {
+                const next = [...prev.filter(o => o.id !== ownerId), finalOwner];
+                localStorage.setItem('fallback_owners', JSON.stringify(next));
+                return next;
+              });
             }
             showToast(`Saved user/owner ${finalOwner.name}`, 'success');
             if (currentUser.id === ownerId) setCurrentUser(finalOwner);
