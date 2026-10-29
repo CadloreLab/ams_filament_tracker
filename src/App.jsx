@@ -318,27 +318,9 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
 
-  // --- Real-time Firestore Sync with LocalStorage Fallback ---
+  // --- Real-time Firestore Sync for Owners & Collections ---
   useEffect(() => {
-    if (!db) {
-      try {
-        const s = localStorage.getItem('fallback_spools');
-        if (s) setSpools(JSON.parse(s));
-        const o = localStorage.getItem('fallback_owners');
-        if (o) setOwners(JSON.parse(o));
-        else {
-          const defaults = [
-            { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, role: 'Printer Owner', colorIdx: 0, notes: 'Primary printer operator & host' },
-            { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1, notes: 'Prints functional ABS/CF car parts' },
-            { id: 'own-3', name: 'Luner89', username: 'Luner89', pin: '6789', isAdmin: false, role: 'Cosplay & Props', colorIdx: 2, notes: 'Mostly PLA Basic & Tough+ rolls' },
-            { id: 'own-4', name: 'Tarken4789', username: 'Tarken4789', pin: '1478', isAdmin: false, role: 'Tabletop & Minis', colorIdx: 3, notes: 'High-detail PLA Matte & Grey spools' }
-          ];
-          setOwners(defaults);
-          localStorage.setItem('fallback_owners', JSON.stringify(defaults));
-        }
-      } catch (e) {}
-      return;
-    }
+    if (!db) return;
 
     try {
       const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
@@ -346,22 +328,9 @@ export default function App() {
         setSpools(list);
       }, (err) => console.error("Spools sync error:", err));
 
-      const unsubOwners = onSnapshot(collection(db, 'owners'), async (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-          setOwners(list);
-        } else {
-          // Seed initial database owners if collection is empty
-          const defaults = [
-            { id: 'own-1', name: 'Charles (Admin)', username: 'admin', pin: '1234', isAdmin: true, role: 'Printer Owner', colorIdx: 0, notes: 'Primary printer operator & host' },
-            { id: 'own-2', name: 'Echo', username: 'Echo', pin: '3456', isAdmin: false, role: 'Friend / Co-op', colorIdx: 1, notes: 'Prints functional ABS/CF car parts' },
-            { id: 'own-3', name: 'Luner89', username: 'Luner89', pin: '6789', isAdmin: false, role: 'Cosplay & Props', colorIdx: 2, notes: 'Mostly PLA Basic & Tough+ rolls' },
-            { id: 'own-4', name: 'Tarken4789', username: 'Tarken4789', pin: '1478', isAdmin: false, role: 'Tabletop & Minis', colorIdx: 3, notes: 'High-detail PLA Matte & Grey spools' }
-          ];
-          for (const o of defaults) {
-            await setDoc(doc(db, 'owners', o.id), o).catch(() => {});
-          }
-        }
+      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setOwners(list);
       }, (err) => console.error("Owners sync error:", err));
 
       const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
@@ -384,6 +353,15 @@ export default function App() {
       console.error("Firestore subscription error:", e);
     }
   }, []);
+
+  // Keep currentUser synced with database owner records if data updates
+  useEffect(() => {
+    if (!currentUser || owners.length === 0) return;
+    const liveOwner = owners.find(o => o.id === currentUser.id);
+    if (liveOwner) {
+      setCurrentUser(liveOwner);
+    }
+  }, [owners]);
 
   // Check login notifications once user logs in
   useEffect(() => {
@@ -497,12 +475,6 @@ export default function App() {
         };
         if (db) {
           await setDoc(doc(db, 'spools', newSpoolId), newSpool).catch(() => {});
-        } else {
-          setSpools(prev => {
-            const next = [newSpool, ...prev];
-            localStorage.setItem('fallback_spools', JSON.stringify(next));
-            return next;
-          });
         }
         setBatchSessionSpools((prev) => [newSpool, ...prev]);
         setBatchBarcodeInput('');
@@ -522,16 +494,6 @@ export default function App() {
               }
             }
             await setDoc(doc(db, 'spools', found.id), { ...found, amsSlot: targetSlot }, { merge: true }).catch(() => {});
-          } else {
-            setSpools(prev => {
-              const next = prev.map(s => {
-                if (s.id === found.id) return { ...s, amsSlot: targetSlot };
-                if (s.amsSlot === targetSlot) return { ...s, amsSlot: null };
-                return s;
-              });
-              localStorage.setItem('fallback_spools', JSON.stringify(next));
-              return next;
-            });
           }
           setLoadSlotModal(null);
           setSlotScanBarcode('');
@@ -654,16 +616,6 @@ export default function App() {
         }
       }
       await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: slot }, { merge: true }).catch(() => {});
-    } else {
-      setSpools(prev => {
-        const next = prev.map(s => {
-          if (s.id === spoolId) return { ...s, amsSlot: slot };
-          if (s.amsSlot === slot) return { ...s, amsSlot: null };
-          return s;
-        });
-        localStorage.setItem('fallback_spools', JSON.stringify(next));
-        return next;
-      });
     }
     playZebraBeep('success', soundEnabled);
     showToast(`Loaded ${targetSpool.barcode} into AMS Slot ${slot}`, 'success');
@@ -678,12 +630,6 @@ export default function App() {
     const oldSlot = targetSpool.amsSlot;
     if (db) {
       await setDoc(doc(db, 'spools', targetSpool.id), { ...targetSpool, amsSlot: null }, { merge: true }).catch(() => {});
-    } else {
-      setSpools(prev => {
-        const next = prev.map(s => s.id === spoolId ? { ...s, amsSlot: null } : s);
-        localStorage.setItem('fallback_spools', JSON.stringify(next));
-        return next;
-      });
     }
     playZebraBeep('scan', soundEnabled);
     showToast(`Unloaded ${targetSpool.barcode} from Slot ${oldSlot}`, 'info');
@@ -758,7 +704,7 @@ export default function App() {
               const formData = new FormData(e.target);
               const uname = formData.get('username').trim().toLowerCase();
               const pin = formData.get('pin').trim();
-              const found = owners.find((o) => (o.username || '').toLowerCase() === uname && o.pin === pin);
+              const found = owners.find((o) => (o.username || '').toLowerCase() === uname && String(o.pin) === pin);
               if (found) {
                 setCurrentUser(found);
                 playZebraBeep('success', soundEnabled);
@@ -783,7 +729,7 @@ export default function App() {
             </button>
           </form>
           <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-center text-xs text-zinc-400 font-mono space-y-1">
-            <div>Default Admin: <strong className="text-amber-400">admin</strong> / PIN: <strong className="text-amber-400">1234</strong></div>
+            <div>Default Admin: <strong className="text-amber-400">admin</strong> / PIN: <strong className="text-amber-400">072518</strong></div>
           </div>
         </div>
       </div>
@@ -1627,24 +1573,12 @@ export default function App() {
           const finalSpool = { ...sp, id: spoolId };
           if (db) {
             await setDoc(doc(db, 'spools', spoolId), finalSpool).catch(() => {});
-          } else {
-            setSpools(prev => {
-              const next = [finalSpool, ...prev.filter(s => s.id !== spoolId)];
-              localStorage.setItem('fallback_spools', JSON.stringify(next));
-              return next;
-            });
           }
           showToast(`Saved spool ${finalSpool.barcode}`, 'success');
           setSpoolFormModal(null);
         }} onDelete={async (id) => {
           if (db) {
             await deleteDoc(doc(db, 'spools', id)).catch(() => {});
-          } else {
-            setSpools(prev => {
-              const next = prev.filter(s => s.id !== id);
-              localStorage.setItem('fallback_spools', JSON.stringify(next));
-              return next;
-            });
           }
           setSpoolFormModal(null);
           showToast('Spool deleted', 'info');
@@ -1664,12 +1598,6 @@ export default function App() {
             const finalOwner = { ...savedOwner, id: ownerId, isAdmin: finalIsAdmin };
             if (db) {
               await setDoc(doc(db, 'owners', ownerId), finalOwner).catch(() => {});
-            } else {
-              setOwners(prev => {
-                const next = [...prev.filter(o => o.id !== ownerId), finalOwner];
-                localStorage.setItem('fallback_owners', JSON.stringify(next));
-                return next;
-              });
             }
             showToast(`Saved user/owner ${finalOwner.name}`, 'success');
             if (currentUser.id === ownerId) setCurrentUser(finalOwner);
