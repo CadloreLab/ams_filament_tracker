@@ -641,10 +641,38 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-24 select-none">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans pb-16 select-none">
       <header className="sticky top-0 z-30 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 shadow-lg">
         <div className="max-w-5xl mx-auto px-3 py-2">
-          <div className="flex items-center justify-between gap-2">
+          {/* TOP TASKBAR (NAV) */}
+          <div className="grid grid-cols-6 gap-1.5 pb-2.5 border-b border-zinc-800">
+            {[
+              { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4` },
+              { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length },
+              { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length },
+              { id: 'owners', label: 'Owners', icon: Users, badge: owners.length },
+              { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length },
+              { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: currentUser.isAdmin ? '★' : '' }
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-1 transition ${active ? 'bg-amber-500 text-zinc-950 font-extrabold shadow' : 'bg-zinc-950/80 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 border border-zinc-800'}`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${active ? 'bg-zinc-950 text-amber-300 font-bold' : 'bg-zinc-800 text-zinc-400'}`}>{tab.badge}</span>
+                  </div>
+                  <span className="text-[10px] sm:text-[11px] tracking-tight">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 pt-2">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-lg bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-inner">
                 <ScanBarcode className="w-5 h-5" />
@@ -1528,7 +1556,6 @@ export default function App() {
             const ownerId = savedOwner.id || `own-${owners.length + 1}`;
             const existingOwner = owners.find(o => o.id === ownerId);
             
-            // If editing and password field is blank/untouched, keep existing PIN
             const finalPin = (savedOwner.pin === '' || savedOwner.pin === undefined) && existingOwner ? existingOwner.pin : savedOwner.pin;
             const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : (existingOwner ? existingOwner.isAdmin : false);
 
@@ -1549,31 +1576,6 @@ export default function App() {
           }}
         />
       )}
-
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-zinc-900/95 backdrop-blur border-t border-zinc-800">
-        <div className="max-w-5xl mx-auto grid grid-cols-6 px-2 py-1.5 gap-1">
-          {[
-            { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4` },
-            { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length },
-            { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length },
-            { id: 'owners', label: 'Owners', icon: Users, badge: owners.length },
-            { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length },
-            { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: currentUser.isAdmin ? '★' : '' }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`py-2 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition ${active ? 'bg-amber-500/15 text-amber-400 font-extrabold border border-amber-500/30' : 'text-zinc-400 hover:text-zinc-200'}`}>
-                <div className="relative flex items-center justify-center">
-                  <Icon className="w-5 h-5" />
-                  <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-mono ${active ? 'bg-amber-500 text-zinc-950 font-bold' : 'bg-zinc-800 text-zinc-400'}`}>{tab.badge}</span>
-                </div>
-                <span className="text-[10px] sm:text-[11px] tracking-tight">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
     </div>
   );
 }
