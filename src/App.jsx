@@ -48,7 +48,9 @@ import {
   Ban,
   Database,
   Eye,
-  EyeOff
+  EyeOff,
+  UserCog,
+  KeyRound
 } from 'lucide-react';
 
 // ============================================================================
@@ -83,6 +85,22 @@ try {
 } catch (e) {
   console.error("Firebase init error:", e);
 }
+
+// ============================================================================
+// RBAC ROLES DEFINITION
+// ============================================================================
+const ROLES = {
+  ADMIN: { id: 'ADMIN', label: 'Admin', priorityWeight: 3, badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
+  OPERATOR: { id: 'OPERATOR', label: 'Print Operator', priorityWeight: 3, badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+  SUPER_USER: { id: 'SUPER_USER', label: 'Super-User', priorityWeight: 2, badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
+  REQUESTER: { id: 'REQUESTER', label: 'Requester', priorityWeight: 1, badge: 'bg-zinc-800 text-zinc-300 border-zinc-700' }
+};
+
+const getUserRole = (user) => {
+  if (!user) return ROLES.REQUESTER;
+  if (user.isAdmin) return ROLES.ADMIN;
+  return ROLES[user.accessRole] || ROLES.REQUESTER;
+};
 
 const OWNER_COLORS = [
   { name: 'Amber', bg: 'bg-amber-500/20', text: 'text-amber-300', border: 'border-amber-500/50', hex: '#F59E0B' },
@@ -230,6 +248,7 @@ export default function App() {
             username: data.username || '',
             pin: String(data.pin || ''),
             isAdmin: Boolean(data.isAdmin),
+            accessRole: data.accessRole || (data.isAdmin ? 'ADMIN' : 'REQUESTER'),
             role: data.role || 'Member',
             colorIdx: Number(data.colorIdx ?? 0),
             notes: data.notes || '',
@@ -279,6 +298,31 @@ export default function App() {
     if (liveOwner) setCurrentUser(liveOwner);
   }, [owners]);
 
+  // Role permissions & allowed tabs
+  const userRole = getUserRole(currentUser);
+  const isAdminOrOperator = userRole.id === 'ADMIN' || userRole.id === 'OPERATOR';
+  const isAdmin = userRole.id === 'ADMIN';
+
+  const allTabs = [
+    { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4`, show: isAdminOrOperator },
+    { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length, show: true },
+    { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length, show: userRole.id !== 'REQUESTER' },
+    { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length, show: true },
+    { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: isAdmin ? '★' : '', show: isAdmin }
+  ];
+
+  const visibleTabs = allTabs.filter(t => t.show);
+
+  useEffect(() => {
+    if (!visibleDataTabAllowed(activeTab, visibleTabs)) {
+      setActiveTab(visibleTabs[0]?.id || 'queue');
+    }
+  }, [userRole, activeTab]);
+
+  function visibleDataTabAllowed(tabId, tabs) {
+    return tabs.some(t => t.id === tabId);
+  }
+
   useEffect(() => {
     if (!currentUser || printRequests.length === 0) return;
     const userNotifs = printRequests.filter(req => req.ownerId === currentUser.id && (req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !req.notified);
@@ -294,7 +338,7 @@ export default function App() {
     } catch (e) {}
   }, [currentUser]);
 
-  const [activeTab, setActiveTab] = useState('ams');
+  const [activeTab, setActiveTab] = useState('queue');
   const [scanMode, setScanMode] = useState('AUTO');
   const [manualScanInput, setManualScanInput] = useState('');
   const [scannerDrawerOpen, setScannerDrawerOpen] = useState(true);
@@ -307,6 +351,7 @@ export default function App() {
   const [scaleModal, setScaleModal] = useState(null);
   const [labelModal, setLabelModal] = useState(null);
   const [ownerModal, setOwnerModal] = useState(null);
+  const [accountSettingsModalOpen, setAccountSettingsModalOpen] = useState(false);
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [completeRequestModal, setCompleteRequestModal] = useState(null);
   const [denyModal, setDenyModal] = useState(null);
@@ -351,6 +396,7 @@ export default function App() {
 
   const handleBarcodeScanned = useCallback(
     async (rawCode) => {
+      if (!isAdminOrOperator) return;
       const code = String(rawCode || '').trim().toUpperCase();
       if (!code) return;
 
@@ -475,13 +521,14 @@ export default function App() {
       const firstFree = AMS_SLOTS.find((slot) => !occupiedSlots.has(slot));
       setScannedSpoolModal({ spool: matchedSpool, suggestedSlot: firstFree || 'A1' });
     },
-    [batchModalOpen, batchConfig, batchSessionSpools.length, loadSlotModal, spools, owners, currentUser, scanMode, soundEnabled, showToast]
+    [batchModalOpen, batchConfig, batchSessionSpools.length, loadSlotModal, spools, owners, currentUser, scanMode, soundEnabled, showToast, isAdminOrOperator]
   );
 
   const keyBufferRef = useRef('');
   const lastKeyTimeRef = useRef(0);
 
   useEffect(() => {
+    if (!isAdminOrOperator) return;
     const handleKeyDown = (e) => {
       if (e.ctrlKey || e.altKey || e.metaKey) return;
       const activeTag = document.activeElement?.tagName?.toLowerCase();
@@ -507,7 +554,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleBarcodeScanned]);
+  }, [handleBarcodeScanned, isAdminOrOperator]);
 
   const loadSpoolIntoSlot = async (spoolId, slot) => {
     const targetSpool = spools.find((s) => s.id === spoolId);
@@ -591,6 +638,26 @@ export default function App() {
     });
   }, [owners, spools, logs]);
 
+  // Weighted queue sort for RBAC
+  const sortedPrintRequests = useMemo(() => {
+    return [...printRequests].sort((a, b) => {
+      const activeStatus = ['WAITING_APPROVAL', 'APPROVED', 'PREPARING'];
+      const aActive = activeStatus.includes(a.status);
+      const bActive = activeStatus.includes(b.status);
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      const ownerA = ownerMap[a.ownerId];
+      const ownerB = ownerMap[b.ownerId];
+      const weightA = getUserRole(ownerA).priorityWeight;
+      const weightB = getUserRole(ownerB).priorityWeight;
+
+      if (weightA !== weightB) return weightB - weightA;
+
+      return new Date(a.createdAt) - new Date(b.createdAt);
+    });
+  }, [printRequests, ownerMap]);
+
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4">
@@ -645,15 +712,8 @@ export default function App() {
       <header className="sticky top-0 z-30 bg-zinc-900/95 backdrop-blur border-b border-zinc-800 shadow-lg">
         <div className="max-w-5xl mx-auto px-3 py-2">
           {/* TOP TASKBAR (NAV) */}
-          <div className="grid grid-cols-6 gap-1.5 pb-2.5 border-b border-zinc-800">
-            {[
-              { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4` },
-              { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length },
-              { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length },
-              { id: 'owners', label: 'Owners', icon: Users, badge: owners.length },
-              { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length },
-              { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: currentUser.isAdmin ? '★' : '' }
-            ].map((tab) => {
+          <div className="grid grid-cols-5 gap-1.5 pb-2.5 border-b border-zinc-800">
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
               return (
@@ -682,9 +742,8 @@ export default function App() {
                   <h1 className="text-sm sm:text-base font-extrabold tracking-tight text-white uppercase">
                     AMS 2 PRO <span className="text-amber-400">WEDGE</span>
                   </h1>
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    ☁️ CLOUD SYNCED ({bambuLabColors.length} Colors)
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${userRole.badge}`}>
+                    {userRole.label}
                   </span>
                 </div>
                 <p className="text-[11px] text-zinc-400 font-mono">
@@ -701,12 +760,22 @@ export default function App() {
                 <Send className="w-4 h-4" />
                 <span className="hidden sm:inline">Request Print</span>
               </button>
+              {isAdminOrOperator && (
+                <button
+                  onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs shadow transition active:scale-95"
+                >
+                  <PackagePlus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Batch Intake</span>
+                </button>
+              )}
               <button
-                onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs shadow transition active:scale-95"
+                onClick={() => setAccountSettingsModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 font-bold text-xs flex items-center gap-1"
+                title="Account Settings"
               >
-                <PackagePlus className="w-4 h-4" />
-                <span className="hidden sm:inline">Batch Intake</span>
+                <UserCog className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Account</span>
               </button>
               <button
                 onClick={() => setSoundEnabled(!soundEnabled)}
@@ -724,26 +793,28 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5 mt-2 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
-            {[
-              { id: 'AUTO', label: 'Quick Scan (Auto)' },
-              { id: 'AMS_LOAD', label: 'AMS Load/Swap' },
-              { id: 'LOG_USAGE', label: 'Log Print Usage' }
-            ].map((m) => {
-              const active = scanMode === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setScanMode(m.id)}
-                  className={`py-1.5 px-2 rounded-lg text-center transition flex flex-col items-center justify-center ${active ? 'bg-amber-500 text-zinc-950 font-extrabold shadow' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 font-medium'}`}
-                >
-                  <span className="text-[11px] sm:text-xs leading-tight">{m.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {isAdminOrOperator && (
+            <div className="grid grid-cols-3 gap-1.5 mt-2 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+              {[
+                { id: 'AUTO', label: 'Quick Scan (Auto)' },
+                { id: 'AMS_LOAD', label: 'AMS Load/Swap' },
+                { id: 'LOG_USAGE', label: 'Log Print Usage' }
+              ].map((m) => {
+                const active = scanMode === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setScanMode(m.id)}
+                    className={`py-1.5 px-2 rounded-lg text-center transition flex flex-col items-center justify-center ${active ? 'bg-amber-500 text-zinc-950 font-extrabold shadow' : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 font-medium'}`}
+                  >
+                    <span className="text-[11px] sm:text-xs leading-tight">{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {scannerDrawerOpen && (
+          {isAdminOrOperator && scannerDrawerOpen && (
             <div className="mt-2 pt-2 border-t border-zinc-800/80 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <form
                 onSubmit={(e) => {
@@ -821,7 +892,7 @@ export default function App() {
       )}
 
       <main className="max-w-5xl mx-auto px-3 pt-4 space-y-4">
-        {activeTab === 'ams' && (
+        {activeTab === 'ams' && isAdminOrOperator && (
           <div className="space-y-4">
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3.5 shadow-lg">
               <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-zinc-800">
@@ -922,14 +993,14 @@ export default function App() {
                   <h2 className="text-base font-bold text-white flex items-center gap-2">
                     <Clock className="w-5 h-5 text-indigo-400" /> Print Requests & Production Queue ({printRequests.length})
                   </h2>
-                  <p className="text-xs text-zinc-400">Manage incoming print jobs, co-op approvals, and production workflow</p>
+                  <p className="text-xs text-zinc-400">Manage incoming print jobs, co-op approvals, and weighted priority workflow</p>
                 </div>
                 <button onClick={() => setRequestModalOpen(true)} className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow">
                   <Send className="w-4 h-4" /> Submit Print Request
                 </button>
               </div>
 
-              {printRequests.length === 0 ? (
+              {sortedPrintRequests.length === 0 ? (
                 <div className="text-center py-12 space-y-2">
                   <Clock className="w-10 h-10 text-zinc-600 mx-auto" />
                   <p className="text-sm font-bold text-zinc-300">No print requests in queue</p>
@@ -937,8 +1008,10 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {printRequests.map((req) => {
-                    const reqOwner = ownerMap[req.ownerId]?.name || 'Unknown';
+                  {sortedPrintRequests.map((req) => {
+                    const reqOwner = ownerMap[req.ownerId];
+                    const reqOwnerName = reqOwner?.name || 'Unknown';
+                    const reqRole = getUserRole(reqOwner);
                     const foreignSpoolItems = req.selectedSpoolIds.map(id => {
                       const sp = spools.find(s => s.id === id);
                       return { spool: sp, isForeign: sp && sp.ownerId !== req.ownerId, denied: req.deniedSpoolIds?.includes(id) };
@@ -946,6 +1019,7 @@ export default function App() {
 
                     const unapprovedForeign = foreignSpoolItems.filter(item => item.isForeign && !req.approved && !item.denied);
                     const isDenied = req.status === 'DENIED';
+                    const isMyRequest = req.ownerId === currentUser.id;
 
                     return (
                       <div key={req.id} className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -961,11 +1035,16 @@ export default function App() {
                             }`}>
                               {req.status.replace('_', ' ')}
                             </span>
+                            {reqRole.id === 'SUPER_USER' && (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-extrabold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                                ⚡ PRIORITY BOOST
+                              </span>
+                            )}
                             <span className="text-base font-extrabold text-white truncate">{req.title}</span>
                           </div>
 
                           <div className="text-xs text-zinc-400 flex items-center gap-3 flex-wrap">
-                            <span>Requested by: <strong className="text-amber-300">{reqOwner}</strong></span>
+                            <span>Requested by: <strong className="text-amber-300">{reqOwnerName}</strong> ({reqRole.label})</span>
                             {req.makerWorldUrl && (
                               <a href={req.makerWorldUrl} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline inline-flex items-center gap-1 font-mono text-xs">
                                 MakerWorld Link <ExternalLink className="w-3 h-3" />
@@ -984,12 +1063,12 @@ export default function App() {
 
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {foreignSpoolItems.map(({ spool, isForeign, denied }) => {
-                              const spOwner = ownerMap[spool.ownerId]?.name;
-                              const canDenyThis = (currentUser.id === spool.ownerId || currentUser.isAdmin) && req.status === 'WAITING_APPROVAL' && !denied;
+                              const spOwnerName = ownerMap[spool.ownerId]?.name;
+                              const canDenyThis = (currentUser.id === spool.ownerId || isAdmin) && req.status === 'WAITING_APPROVAL' && !denied;
 
                               return (
                                 <div key={spool.id} className={`flex items-center gap-2 px-2 py-1 rounded text-[11px] font-mono border ${denied ? 'bg-rose-950/40 border-rose-500/50 text-rose-300 line-through' : isForeign ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
-                                  <span>{spool.material} ({spool.colorName}) — Owner: {spOwner} {isForeign ? '(Co-op)' : ''}</span>
+                                  <span>{spool.material} ({spool.colorName}) — Owner: {spOwnerName} {isForeign ? '(Co-op)' : ''}</span>
                                   {canDenyThis && (
                                     <button
                                       onClick={() => setDenyModal({ request: req, spoolId: spool.id })}
@@ -1007,7 +1086,23 @@ export default function App() {
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-                          {unapprovedForeign.length > 0 && (currentUser.isAdmin || unapprovedForeign.some(item => item.spool.ownerId === currentUser.id)) && (
+                          {isMyRequest && (
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Cancel your print request "${req.title}"?`)) {
+                                  if (db) {
+                                    await deleteDoc(doc(db, 'printRequests', req.id));
+                                  }
+                                  showToast('Print request cancelled.', 'info');
+                                }
+                              }}
+                              className="px-3 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-1 shadow transition"
+                            >
+                              <XCircle className="w-4 h-4" /> Cancel Request
+                            </button>
+                          )}
+
+                          {unapprovedForeign.length > 0 && (isAdmin || unapprovedForeign.some(item => item.spool.ownerId === currentUser.id)) && (
                             <button
                               onClick={async () => {
                                 if (db) {
@@ -1021,7 +1116,7 @@ export default function App() {
                             </button>
                           )}
 
-                          {req.status === 'APPROVED' && currentUser.isAdmin && (
+                          {req.status === 'APPROVED' && isAdminOrOperator && (
                             <button
                               onClick={async () => {
                                 if (unapprovedForeign.length > 0) {
@@ -1039,7 +1134,7 @@ export default function App() {
                             </button>
                           )}
 
-                          {req.status === 'PREPARING' && currentUser.isAdmin && (
+                          {req.status === 'PREPARING' && isAdminOrOperator && (
                             <button
                               onClick={() => setCompleteRequestModal({ request: req })}
                               className="px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-1 shadow"
@@ -1048,7 +1143,7 @@ export default function App() {
                             </button>
                           )}
 
-                          {(req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && (
+                          {(req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !isMyRequest && (
                             <button
                               onClick={async () => {
                                 if (db) {
@@ -1071,22 +1166,26 @@ export default function App() {
           </div>
         )}
 
-        {activeTab === 'spools' && (
+        {activeTab === 'spools' && userRole.id !== 'REQUESTER' && (
           <div className="space-y-4">
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-3.5 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="text-base font-bold text-white">Filament Spool Registry ({spools.length})</h2>
-                  <p className="text-xs text-zinc-400">Scan any official Bambu spool barcode or use Batch Intake</p>
+                  <p className="text-xs text-zinc-400">
+                    {userRole.id === 'SUPER_USER' ? 'Viewing your own spools and co-op inventory' : 'Scan any official Bambu spool barcode or use Batch Intake'}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }} className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow">
-                    <PackagePlus className="w-4 h-4" /> Batch Scan 29 Rolls
-                  </button>
-                  <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White (10100)', colorHex: '#FFFFFF', brand: 'Bambu Lab', ownerId: currentUser?.id || owners[0]?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
-                    <Plus className="w-4 h-4 text-amber-400" /> New Spool
-                  </button>
-                </div>
+                {isAdminOrOperator && (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setBatchSessionSpools([]); setBatchModalOpen(true); }} className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow">
+                      <PackagePlus className="w-4 h-4" /> Batch Scan 29 Rolls
+                    </button>
+                    <button onClick={() => setSpoolFormModal({ isEdit: false, spool: { barcode: generateNextBarcode(), material: 'PLA Basic', colorName: 'Jade White (10100)', colorHex: '#FFFFFF', brand: 'Bambu Lab', ownerId: currentUser?.id || owners[0]?.id || 'own-1', initialWeight: 1000, remainingWeight: 1000, tareWeight: 250, amsSlot: null, notes: '' } })} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white font-bold text-xs flex items-center gap-1.5">
+                      <Plus className="w-4 h-4 text-amber-400" /> New Spool
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
@@ -1115,7 +1214,7 @@ export default function App() {
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-12 text-center space-y-3">
                 <Disc className="w-10 h-10 text-zinc-600 mx-auto" />
                 <p className="text-sm font-bold text-zinc-300">No Spools in Inventory</p>
-                <p className="text-xs text-zinc-500">Use "Batch Scan 29 Rolls" or "New Spool" to add your filament inventory.</p>
+                <p className="text-xs text-zinc-500">No matching filament spools found.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1143,86 +1242,40 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-zinc-800/80">
-                        {spool.amsSlot ? (
-                          <button onClick={() => unloadSpoolFromAms(spool.id)} className="flex-1 py-1.5 px-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs flex items-center justify-center gap-1">
-                            <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" /> Unload {spool.amsSlot}
-                          </button>
-                        ) : (
-                          <button onClick={() => {
-                            const occupiedSlots = new Set(spools.filter((s) => s.amsSlot).map((s) => s.amsSlot));
-                            const firstFree = AMS_SLOTS.find((slot) => !occupiedSlots.has(slot)) || 'A1';
-                            setScannedSpoolModal({ spool, suggestedSlot: firstFree });
-                          }} className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-xs flex items-center justify-center gap-1">
-                            <Disc className="w-3.5 h-3.5" /> Load to AMS
-                          </button>
+                        {isAdminOrOperator && (
+                          <>
+                            {spool.amsSlot ? (
+                              <button onClick={() => unloadSpoolFromAms(spool.id)} className="flex-1 py-1.5 px-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs flex items-center justify-center gap-1">
+                                <ArrowRightLeft className="w-3.5 h-3.5 text-amber-400" /> Unload {spool.amsSlot}
+                              </button>
+                            ) : (
+                              <button onClick={() => {
+                                const occupiedSlots = new Set(spools.filter((s) => s.amsSlot).map((s) => s.amsSlot));
+                                const firstFree = AMS_SLOTS.find((slot) => !occupiedSlots.has(slot)) || 'A1';
+                                setScannedSpoolModal({ spool, suggestedSlot: firstFree });
+                              }} className="flex-1 py-1.5 px-2.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 font-bold text-xs flex items-center justify-center gap-1">
+                                <Disc className="w-3.5 h-3.5" /> Load to AMS
+                              </button>
+                            )}
+                            <button onClick={() => setPrintModal({ mode: 'SINGLE', singleSpoolId: spool.id, initialSlot: spool.amsSlot })} className="py-1.5 px-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold text-xs flex items-center gap-1">
+                              <Printer className="w-3.5 h-3.5" /> Use
+                            </button>
+                          </>
                         )}
-                        <button onClick={() => setPrintModal({ mode: 'SINGLE', singleSpoolId: spool.id, initialSlot: spool.amsSlot })} className="py-1.5 px-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-amber-300 font-bold text-xs flex items-center gap-1">
-                          <Printer className="w-3.5 h-3.5" /> Use
-                        </button>
                         <button onClick={() => setLabelModal({ spool })} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Label Viewer">
                           <QrCode className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setSpoolFormModal({ isEdit: true, spool: { ...spool } })} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Edit Spool">
-                          <Edit3 className="w-4 h-4" />
-                        </button>
+                        {isAdminOrOperator && (
+                          <button onClick={() => setSpoolFormModal({ isEdit: true, spool: { ...spool } })} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Edit Spool">
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
-          </div>
-        )}
-
-        {activeTab === 'owners' && (
-          <div className="space-y-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-white">Filament Owners & Logins</h2>
-                <p className="text-xs text-zinc-400">Manage member accounts, PIN codes, and individual consumption</p>
-              </div>
-              {currentUser.isAdmin && (
-                <button onClick={() => setOwnerModal({ isEdit: false, owner: { name: '', username: '', pin: '', isAdmin: false, role: 'Co-Op Member', colorIdx: owners.length % OWNER_COLORS.length, notes: '' } })} className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow">
-                  <UserPlus className="w-4 h-4" /> Add New User
-                </button>
-              )}
-            </div>
-            <div className="grid grid-cols-1 gap-3.5">
-              {ownerLedger.map((person) => {
-                const style = OWNER_COLORS[(person.colorIdx ?? 0) % OWNER_COLORS.length];
-                return (
-                  <div key={person.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-zinc-800">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center font-extrabold text-sm ${style.bg} ${style.text} ${style.border}`}>
-                          {person.name.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm sm:text-base font-bold text-white">{person.name}</h3>
-                            <span className="text-xs text-zinc-400">({person.role})</span>
-                            {person.isAdmin && <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 font-bold">Admin</span>}
-                          </div>
-                          <p className="text-xs text-zinc-400 font-mono">
-                            Username: <span className="text-white">{person.username}</span> • Password: <span className="text-zinc-500 italic">•••••••• (Hidden for Security)</span>
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setOwnerFilter(person.id); setActiveTab('spools'); }} className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200">
-                          Filter Spools ({person.spoolCount})
-                        </button>
-                        {(currentUser.isAdmin || currentUser.id === person.id) && (
-                          <button onClick={() => setOwnerModal({ isEdit: true, owner: { ...person } })} className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300" title="Edit User">
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
 
@@ -1236,42 +1289,120 @@ export default function App() {
                 <p className="text-xs text-zinc-500 py-4 text-center">No print logs recorded yet.</p>
               ) : (
                 <div className="space-y-2.5">
-                  {logs.map((log) => (
-                    <div key={log.id} className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">{log.status}</span>
-                          <span className="text-sm font-bold text-white">{log.jobName}</span>
+                  {logs.map((log) => {
+                    const isMyLog = userRole.id === 'REQUESTER' ? log.usages?.some(u => u.ownerId === currentUser.id) : true;
+                    if (userRole.id === 'REQUESTER' && !isMyLog) return null;
+
+                    return (
+                      <div key={log.id} className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">{log.status}</span>
+                            <span className="text-sm font-bold text-white">{log.jobName}</span>
+                          </div>
+                          <div className="text-[11px] font-mono text-zinc-500">{new Date(log.timestamp).toLocaleString()}</div>
                         </div>
-                        <div className="text-[11px] font-mono text-zinc-500">{new Date(log.timestamp).toLocaleString()}</div>
+                        <span className="text-sm font-mono font-extrabold text-amber-400">-{log.totalGrams}g total</span>
                       </div>
-                      <span className="text-sm font-mono font-extrabold text-amber-400">-{log.totalGrams}g total</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
         )}
 
-        {activeTab === 'admin' && (
-          <div className="space-y-4">
+        {activeTab === 'admin' && isAdmin && (
+          <div className="space-y-6">
+            {/* User Accounts & RBAC Management */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+                <div className="flex items-center gap-2.5">
+                  <Users className="w-6 h-6 text-amber-400" />
+                  <div>
+                    <h2 className="text-base font-bold text-white">User Accounts & RBAC Management ({ownerLedger.length})</h2>
+                    <p className="text-xs text-zinc-400">Manage user roles, passwords, and member access</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setOwnerModal({ isEdit: false, owner: { name: '', username: '', pin: '', accessRole: 'REQUESTER', role: 'Co-Op Member', colorIdx: owners.length % OWNER_COLORS.length, notes: '' } })}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs flex items-center gap-1.5 shadow"
+                >
+                  <UserPlus className="w-4 h-4" /> Add User Account
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {ownerLedger.map((person) => {
+                  const style = OWNER_COLORS[(person.colorIdx ?? 0) % OWNER_COLORS.length];
+                  const pRole = getUserRole(person);
+
+                  return (
+                    <div key={person.id} className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center font-extrabold text-sm ${style.bg} ${style.text} ${style.border}`}>
+                          {person.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-bold text-white">{person.name}</h3>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${pRole.badge}`}>
+                              {pRole.label}
+                            </span>
+                            {person.notes && <span className="text-xs text-zinc-400">({person.notes})</span>}
+                          </div>
+                          <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                            Username: <span className="text-white">{person.username}</span> • Spools: <span className="text-amber-400">{person.spoolCount}</span> • Consumed: <span className="text-emerald-400">{person.consumedSuccess}g</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={person.accessRole || (person.isAdmin ? 'ADMIN' : 'REQUESTER')}
+                          onChange={async (e) => {
+                            const newRole = e.target.value;
+                            const updated = { ...person, accessRole: newRole, isAdmin: newRole === 'ADMIN' };
+                            if (db) {
+                              await setDoc(doc(db, 'owners', person.id), updated, { merge: true }).catch(() => {});
+                            }
+                            showToast(`Updated role for ${person.name} to ${ROLES[newRole]?.label}`, 'success');
+                          }}
+                          className="px-2.5 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-xs font-mono text-white focus:outline-none focus:border-amber-400"
+                        >
+                          <option value="ADMIN">Admin</option>
+                          <option value="OPERATOR">Print Operator</option>
+                          <option value="SUPER_USER">Super-User</option>
+                          <option value="REQUESTER">Requester</option>
+                        </select>
+                        <button
+                          onClick={() => setOwnerModal({ isEdit: true, owner: { ...person } })}
+                          className="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 font-bold text-xs flex items-center gap-1"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" /> Edit
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* System Factory Reset */}
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4 max-w-2xl">
               <div className="flex items-center gap-2.5 pb-3 border-b border-zinc-800">
                 <ShieldCheck className="w-6 h-6 text-amber-400" />
                 <div>
-                  <h2 className="text-base font-bold text-white">System Admin Controls</h2>
-                  <p className="text-xs text-zinc-400">Manage database resets and security</p>
+                  <h2 className="text-base font-bold text-white">System Controls</h2>
+                  <p className="text-xs text-zinc-400">Manage database resets and local cache</p>
                 </div>
               </div>
 
-              {currentUser.isAdmin && (
-                <div className="pt-2">
-                  <button onClick={() => { if (confirm('Clear local session?')) { localStorage.clear(); window.location.reload(); } }} className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs">
-                    Clear Local Cache & Reload
-                  </button>
-                </div>
-              )}
+              <div className="pt-2 flex items-center gap-3">
+                <button onClick={() => { if (confirm('Clear local session?')) { localStorage.clear(); window.location.reload(); } }} className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs border border-zinc-700">
+                  Clear Local Cache & Reload
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1576,6 +1707,84 @@ export default function App() {
           }}
         />
       )}
+
+      {accountSettingsModalOpen && (
+        <AccountSettingsModal
+          currentUser={currentUser}
+          onClose={() => setAccountSettingsModalOpen(false)}
+          onSave={async (updatedData) => {
+            const finalUser = { ...currentUser, ...updatedData };
+            if (db) {
+              await setDoc(doc(db, 'owners', finalUser.id), finalUser, { merge: true }).catch(() => {});
+            }
+            setCurrentUser(finalUser);
+            setAccountSettingsModalOpen(false);
+            showToast('Account details updated successfully!', 'success');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AccountSettingsModal({ currentUser, onClose, onSave }) {
+  const [name, setName] = useState(currentUser.name || '');
+  const [username, setUsername] = useState(currentUser.username || '');
+  const [newPin, setNewPin] = useState('');
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+      <div className="bg-zinc-900 border border-amber-500/50 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+        <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
+          <span className="font-bold text-sm text-white flex items-center gap-1.5">
+            <UserCog className="w-4 h-4 text-amber-400" /> Account Settings
+          </span>
+          <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          if (!name.trim() || !username.trim()) return;
+          onSave({
+            name: name.trim(),
+            username: username.trim(),
+            pin: newPin.trim() !== '' ? newPin.trim() : currentUser.pin
+          });
+        }} className="p-4 space-y-3">
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Full Name</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white focus:outline-none focus:border-amber-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Username</label>
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white focus:outline-none focus:border-amber-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">New Password / PIN (Leave blank to keep current)</label>
+            <input
+              type="text"
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value)}
+              placeholder="Enter new password..."
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400"
+            />
+          </div>
+          <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase shadow">
+            Save Changes
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1857,7 +2066,7 @@ function OwnerFormModal({ modalData, currentUser, onClose, onSave }) {
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3">
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
         <div className="px-4 py-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between">
-          <span className="font-bold text-sm text-white">{modalData.isEdit ? 'Edit User / Owner' : 'Add New User & Login'}</span>
+          <span className="font-bold text-sm text-white">{modalData.isEdit ? 'Edit User Account' : 'Add New User Account'}</span>
           <button onClick={onClose} className="p-1 text-zinc-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
         <form onSubmit={(e) => { 
@@ -1875,7 +2084,7 @@ function OwnerFormModal({ modalData, currentUser, onClose, onSave }) {
               <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
             <div>
-              <label className="text-xs text-zinc-400 block mb-1">Login Password / PIN</label>
+              <label className="text-xs text-zinc-400 block mb-1">Password / PIN</label>
               {modalData.isEdit && !showPasswordInput ? (
                 <div className="flex items-center gap-1.5">
                   <input type="password" disabled value="********" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-zinc-500 cursor-not-allowed" />
@@ -1889,19 +2098,24 @@ function OwnerFormModal({ modalData, currentUser, onClose, onSave }) {
             </div>
           </div>
           <div>
-            <label className="text-xs text-zinc-400 block mb-1">Role / Group</label>
-            <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <label className="text-xs text-zinc-400 block mb-1">Access Role</label>
+            <select
+              value={form.accessRole || 'REQUESTER'}
+              onChange={(e) => setForm({ ...form, accessRole: e.target.value, isAdmin: e.target.value === 'ADMIN' })}
+              className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white"
+            >
+              <option value="ADMIN">Admin</option>
+              <option value="OPERATOR">Print Operator</option>
+              <option value="SUPER_USER">Super-User</option>
+              <option value="REQUESTER">Requester</option>
+            </select>
           </div>
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Notes / Description</label>
             <input type="text" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
-          <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!currentUser.isAdmin} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0" />
-            <label htmlFor="isAdminCheck" className="text-xs text-zinc-400 select-none">Grant Administrator Privileges</label>
-          </div>
           <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase">
-            Save User & Credentials
+            Save User Account
           </button>
         </form>
       </div>
