@@ -201,6 +201,7 @@ const SpoolGaugeSVG = ({ hex = '#00AE42', percentage = 75, size = 54 }) => {
 };
 
 export default function App() {
+  // 1. ALL STATES DECLARED FIRST
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('zebra_ams_current_user_v1');
@@ -219,115 +220,6 @@ export default function App() {
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
   const [toast, setToast] = useState(null);
 
-  const showToast = useCallback((message, type = 'info') => {
-    setToast({ message, type, id: Date.now() });
-  }, []);
-
-  // --- Real-time Firestore Sync ---
-  useEffect(() => {
-    if (!db) return;
-
-    try {
-      const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setSpools(list);
-      }, (err) => console.error("Spools sync error:", err));
-
-      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
-        const list = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name || 'Unknown',
-            username: data.username || '',
-            pin: String(data.pin || ''),
-            isAdmin: Boolean(data.isAdmin),
-            accessRole: data.accessRole || (data.isAdmin ? 'ADMIN' : 'REQUESTER'),
-            role: data.role || 'Member',
-            colorIdx: Number(data.colorIdx ?? 0),
-            notes: data.notes || '',
-            ...data
-          };
-        });
-        setOwners(list);
-      }, (err) => console.error("Owners sync error:", err));
-
-      const unsubCatalog = onSnapshot(collection(db, 'catalog'), (snapshot) => {
-        const list = snapshot.docs
-          .map(d => ({ ...d.data(), id: d.id }))
-          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-        setBambuLabColors(list);
-      }, (err) => console.error("Catalog sync error:", err));
-
-      const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
-      }, (err) => console.error("Logs sync error:", err));
-
-      const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-      }, (err) => console.error("Requests sync error:", err));
-
-      return () => {
-        unsubSpools();
-        unsubOwners();
-        unsubCatalog();
-        unsubLogs();
-        unsubRequests();
-      };
-    } catch (e) {
-      console.error("Firestore subscription error:", e);
-    }
-  }, []);
-
-  const activeCatalogList = bambuLabColors;
-  const MATERIALS = useMemo(() => {
-    return Array.from(new Set(activeCatalogList.map(c => c.material)));
-  }, [activeCatalogList]);
-
-  useEffect(() => {
-    if (!currentUser || owners.length === 0) return;
-    const liveOwner = owners.find(o => o.id === currentUser.id);
-    if (liveOwner) setCurrentUser(liveOwner);
-  }, [owners]);
-
-  // Role permissions & allowed tabs
-  const userRole = getUserRole(currentUser);
-  const isAdminOrOperator = userRole.id === 'ADMIN' || userRole.id === 'OPERATOR';
-  const isAdmin = userRole.id === 'ADMIN';
-
-  const allTabs = [
-    { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4`, show: isAdminOrOperator },
-    { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length, show: true },
-    { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length, show: userRole.id !== 'REQUESTER' },
-    { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length, show: true },
-    { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: isAdmin ? '★' : '', show: isAdmin }
-  ];
-
-  const visibleTabs = allTabs.filter(t => t.show);
-
-  useEffect(() => {
-    if (!visibleTabs.some(t => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0]?.id || 'queue');
-    }
-  }, [activeTab, visibleTabs]);
-
-  useEffect(() => {
-    if (!currentUser || printRequests.length === 0) return;
-    const userNotifs = printRequests.filter(req => req.ownerId === currentUser.id && (req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !req.notified);
-    if (userNotifs.length > 0) {
-      setLoginNotificationModal(userNotifs);
-    }
-  }, [currentUser, printRequests]);
-
-  useEffect(() => {
-    try {
-      if (currentUser) localStorage.setItem('zebra_ams_current_user_v1', JSON.stringify(currentUser));
-      else localStorage.removeItem('zebra_ams_current_user_v1');
-    } catch (e) {}
-  }, [currentUser]);
-
   const [activeTab, setActiveTab] = useState('queue');
   const [scanMode, setScanMode] = useState('AUTO');
   const [manualScanInput, setManualScanInput] = useState('');
@@ -345,6 +237,53 @@ export default function App() {
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [completeRequestModal, setCompleteRequestModal] = useState(null);
   const [denyModal, setDenyModal] = useState(null);
+
+  const [batchConfig, setBatchConfig] = useState({
+    ownerId: currentUser?.id || 'own-1',
+    material: 'PLA Basic',
+    brand: 'Bambu Lab',
+    colorName: 'Jade White (10100)',
+    colorHex: '#FFFFFF',
+    initialWeight: 1000,
+    tareWeight: 250,
+    targetCount: 29
+  });
+  const [batchSessionSpools, setBatchSessionSpools] = useState([]);
+  const [batchBarcodeInput, setBatchBarcodeInput] = useState('');
+  const [slotScanBarcode, setSlotScanBarcode] = useState('');
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [materialFilter, setMaterialFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [ownerFilter, setOwnerFilter] = useState('ALL');
+
+  const keyBufferRef = useRef('');
+  const lastKeyTimeRef = useRef(0);
+
+  // 2. DERIVED VALUES & MEMOS DECLARED AFTER STATES
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type, id: Date.now() });
+  }, []);
+
+  const userRole = getUserRole(currentUser);
+  const isAdminOrOperator = userRole.id === 'ADMIN' || userRole.id === 'OPERATOR';
+  const isAdmin = userRole.id === 'ADMIN';
+
+  const visibleTabs = useMemo(() => {
+    const all = [
+      { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4`, show: isAdminOrOperator },
+      { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length, show: true },
+      { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length, show: userRole.id !== 'REQUESTER' },
+      { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length, show: true },
+      { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: isAdmin ? '★' : '', show: isAdmin }
+    ];
+    return all.filter(t => t.show);
+  }, [spools, printRequests, logs, isAdminOrOperator, userRole.id, isAdmin]);
+
+  const activeCatalogList = bambuLabColors;
+  const MATERIALS = useMemo(() => {
+    return Array.from(new Set(activeCatalogList.map(c => c.material)));
+  }, [activeCatalogList]);
 
   const ownerMap = useMemo(() => {
     const map = {};
@@ -369,20 +308,6 @@ export default function App() {
     });
     return `BBL-${maxNum + 1}`;
   }, [spools]);
-
-  const [batchConfig, setBatchConfig] = useState({
-    ownerId: currentUser?.id || 'own-1',
-    material: 'PLA Basic',
-    brand: 'Bambu Lab',
-    colorName: 'Jade White (10100)',
-    colorHex: '#FFFFFF',
-    initialWeight: 1000,
-    tareWeight: 250,
-    targetCount: 29
-  });
-  const [batchSessionSpools, setBatchSessionSpools] = useState([]);
-  const [batchBarcodeInput, setBatchBarcodeInput] = useState('');
-  const [slotScanBarcode, setSlotScanBarcode] = useState('');
 
   const handleBarcodeScanned = useCallback(
     async (rawCode) => {
@@ -514,38 +439,6 @@ export default function App() {
     [batchModalOpen, batchConfig, batchSessionSpools.length, loadSlotModal, spools, owners, currentUser, scanMode, soundEnabled, showToast, isAdminOrOperator]
   );
 
-  const keyBufferRef = useRef('');
-  const lastKeyTimeRef = useRef(0);
-
-  useEffect(() => {
-    if (!isAdminOrOperator) return;
-    const handleKeyDown = (e) => {
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      const activeTag = document.activeElement?.tagName?.toLowerCase();
-      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
-      const now = performance.now();
-      const delta = now - lastKeyTimeRef.current;
-      if (delta > 120) keyBufferRef.current = '';
-
-      if (e.key === 'Enter') {
-        if (keyBufferRef.current.length >= 4 && !isInputFocused) {
-          e.preventDefault();
-          const scanned = keyBufferRef.current;
-          keyBufferRef.current = '';
-          handleBarcodeScanned(scanned);
-        }
-        return;
-      }
-
-      if (e.key.length === 1 && !isInputFocused) {
-        keyBufferRef.current += e.key;
-        lastKeyTimeRef.current = now;
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleBarcodeScanned, isAdminOrOperator]);
-
   const loadSpoolIntoSlot = async (spoolId, slot) => {
     const targetSpool = spools.find((s) => s.id === spoolId);
     if (!targetSpool) return;
@@ -579,17 +472,11 @@ export default function App() {
 
   const amsSlotMap = useMemo(() => {
     const map = { A1: null, A2: null, A3: null, A4: null };
-    spools.experiments = true; // placeholder tag
     spools.forEach((s) => {
       if (s.amsSlot && map.hasOwnProperty(s.amsSlot)) map[s.amsSlot] = s;
     });
     return map;
   }, [spools]);
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [materialFilter, setMaterialFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [ownerFilter, setOwnerFilter] = useState('ALL');
 
   const filteredSpools = useMemo(() => {
     return spools.filter((s) => {
@@ -647,6 +534,126 @@ export default function App() {
       return new Date(a.createdAt) - new Date(b.createdAt);
     });
   }, [printRequests, ownerMap]);
+
+  // 3. ALL USE-EFFECT HOOKS
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3600);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!db) return;
+
+    try {
+      const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setSpools(list);
+      }, (err) => console.error("Spools sync error:", err));
+
+      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
+        const list = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || 'Unknown',
+            username: data.username || '',
+            pin: String(data.pin || ''),
+            isAdmin: Boolean(data.isAdmin),
+            accessRole: data.accessRole || (data.isAdmin ? 'ADMIN' : 'REQUESTER'),
+            role: data.role || 'Member',
+            colorIdx: Number(data.colorIdx ?? 0),
+            notes: data.notes || '',
+            ...data
+          };
+        });
+        setOwners(list);
+      }, (err) => console.error("Owners sync error:", err));
+
+      const unsubCatalog = onSnapshot(collection(db, 'catalog'), (snapshot) => {
+        const list = snapshot.docs
+          .map(d => ({ ...d.data(), id: d.id }))
+          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        setBambuLabColors(list);
+      }, (err) => console.error("Catalog sync error:", err));
+
+      const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+      }, (err) => console.error("Logs sync error:", err));
+
+      const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      }, (err) => console.error("Requests sync error:", err));
+
+      return () => {
+        unsubSpools();
+        unsubOwners();
+        unsubCatalog();
+        unsubLogs();
+        unsubRequests();
+      };
+    } catch (e) {
+      console.error("Firestore subscription error:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || owners.length === 0) return;
+    const liveOwner = owners.find(o => o.id === currentUser.id);
+    if (liveOwner) setCurrentUser(liveOwner);
+  }, [owners]);
+
+  useEffect(() => {
+    if (!visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0]?.id || 'queue');
+    }
+  }, [activeTab, visibleTabs]);
+
+  useEffect(() => {
+    if (!currentUser || printRequests.length === 0) return;
+    const userNotifs = printRequests.filter(req => req.ownerId === currentUser.id && (req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !req.notified);
+    if (userNotifs.length > 0) {
+      setLoginNotificationModal(userNotifs);
+    }
+  }, [currentUser, printRequests]);
+
+  useEffect(() => {
+    try {
+      if (currentUser) localStorage.setItem('zebra_ams_current_user_v1', JSON.stringify(currentUser));
+      else localStorage.removeItem('zebra_ams_current_user_v1');
+    } catch (e) {}
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!isAdminOrOperator) return;
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+      const now = performance.now();
+      const delta = now - lastKeyTimeRef.current;
+      if (delta > 120) keyBufferRef.current = '';
+
+      if (e.key === 'Enter') {
+        if (keyBufferRef.current.length >= 4 && !isInputFocused) {
+          e.preventDefault();
+          const scanned = keyBufferRef.current;
+          keyBufferRef.current = '';
+          handleBarcodeScanned(scanned);
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !isInputFocused) {
+        keyBufferRef.current += e.key;
+        lastKeyTimeRef.current = now;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleBarcodeScanned, isAdminOrOperator]);
 
   if (!currentUser) {
     return (
