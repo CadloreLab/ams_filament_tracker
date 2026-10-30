@@ -201,7 +201,6 @@ const SpoolGaugeSVG = ({ hex = '#00AE42', percentage = 75, size = 54 }) => {
 };
 
 export default function App() {
-  // 1. ALL STATE & REFS HOISTED TO TOP OF COMPONENT
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('zebra_ams_current_user_v1');
@@ -220,7 +219,116 @@ export default function App() {
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
   const [toast, setToast] = useState(null);
 
-  const [activeTab, setActiveTab] = useState('ams');
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type, id: Date.now() });
+  }, []);
+
+  // --- Real-time Firestore Sync ---
+  useEffect(() => {
+    if (!db) return;
+
+    try {
+      const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setSpools(list);
+      }, (err) => console.error("Spools sync error:", err));
+
+      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
+        const list = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name || 'Unknown',
+            username: data.username || '',
+            pin: String(data.pin || ''),
+            isAdmin: Boolean(data.isAdmin),
+            accessRole: data.accessRole || (data.isAdmin ? 'ADMIN' : 'REQUESTER'),
+            role: data.role || 'Member',
+            colorIdx: Number(data.colorIdx ?? 0),
+            notes: data.notes || '',
+            ...data
+          };
+        });
+        setOwners(list);
+      }, (err) => console.error("Owners sync error:", err));
+
+      const unsubCatalog = onSnapshot(collection(db, 'catalog'), (snapshot) => {
+        const list = snapshot.docs
+          .map(d => ({ ...d.data(), id: d.id }))
+          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        setBambuLabColors(list);
+      }, (err) => console.error("Catalog sync error:", err));
+
+      const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+      }, (err) => console.error("Logs sync error:", err));
+
+      const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+      }, (err) => console.error("Requests sync error:", err));
+
+      return () => {
+        unsubSpools();
+        unsubOwners();
+        unsubCatalog();
+        unsubLogs();
+        unsubRequests();
+      };
+    } catch (e) {
+      console.error("Firestore subscription error:", e);
+    }
+  }, []);
+
+  const activeCatalogList = bambuLabColors;
+  const MATERIALS = useMemo(() => {
+    return Array.from(new Set(activeCatalogList.map(c => c.material)));
+  }, [activeCatalogList]);
+
+  useEffect(() => {
+    if (!currentUser || owners.length === 0) return;
+    const liveOwner = owners.find(o => o.id === currentUser.id);
+    if (liveOwner) setCurrentUser(liveOwner);
+  }, [owners]);
+
+  // Role permissions & allowed tabs
+  const userRole = getUserRole(currentUser);
+  const isAdminOrOperator = userRole.id === 'ADMIN' || userRole.id === 'OPERATOR';
+  const isAdmin = userRole.id === 'ADMIN';
+
+  const allTabs = [
+    { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4`, show: isAdminOrOperator },
+    { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length, show: true },
+    { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length, show: userRole.id !== 'REQUESTER' },
+    { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length, show: true },
+    { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: isAdmin ? '★' : '', show: isAdmin }
+  ];
+
+  const visibleTabs = allTabs.filter(t => t.show);
+
+  useEffect(() => {
+    if (!visibleTabs.some(t => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0]?.id || 'queue');
+    }
+  }, [activeTab, visibleTabs]);
+
+  useEffect(() => {
+    if (!currentUser || printRequests.length === 0) return;
+    const userNotifs = printRequests.filter(req => req.ownerId === currentUser.id && (req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !req.notified);
+    if (userNotifs.length > 0) {
+      setLoginNotificationModal(userNotifs);
+    }
+  }, [currentUser, printRequests]);
+
+  useEffect(() => {
+    try {
+      if (currentUser) localStorage.setItem('zebra_ams_current_user_v1', JSON.stringify(currentUser));
+      else localStorage.removeItem('zebra_ams_current_user_v1');
+    } catch (e) {}
+  }, [currentUser]);
+
+  const [activeTab, setActiveTab] = useState('queue');
   const [scanMode, setScanMode] = useState('AUTO');
   const [manualScanInput, setManualScanInput] = useState('');
   const [scannerDrawerOpen, setScannerDrawerOpen] = useState(true);
@@ -237,53 +345,6 @@ export default function App() {
   const [requestModalOpen, setRequestModalOpen] = useState(false);
   const [completeRequestModal, setCompleteRequestModal] = useState(null);
   const [denyModal, setDenyModal] = useState(null);
-
-  const [batchConfig, setBatchConfig] = useState({
-    ownerId: currentUser?.id || 'own-1',
-    material: 'PLA Basic',
-    brand: 'Bambu Lab',
-    colorName: 'Jade White (10100)',
-    colorHex: '#FFFFFF',
-    initialWeight: 1000,
-    tareWeight: 250,
-    targetCount: 29
-  });
-  const [batchSessionSpools, setBatchSessionSpools] = useState([]);
-  const [batchBarcodeInput, setBatchBarcodeInput] = useState('');
-  const [slotScanBarcode, setSlotScanBarcode] = useState('');
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [materialFilter, setMaterialFilter] = useState('ALL');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [ownerFilter, setOwnerFilter] = useState('ALL');
-
-  const keyBufferRef = useRef('');
-  const lastKeyTimeRef = useRef(0);
-
-  // 2. DERIVED VALUES, MEMOS & CALLBACKS
-  const showToast = useCallback((message, type = 'info') => {
-    setToast({ message, type, id: Date.now() });
-  }, []);
-
-  const userRole = getUserRole(currentUser);
-  const isAdminOrOperator = userRole.id === 'ADMIN' || userRole.id === 'OPERATOR';
-  const isAdmin = userRole.id === 'ADMIN';
-
-  const visibleTabs = useMemo(() => {
-    const all = [
-      { id: 'ams', label: 'AMS 2 Pro', icon: Layers, badge: `${spools.filter((s) => s.amsSlot).length}/4`, show: isAdminOrOperator },
-      { id: 'queue', label: 'Queue', icon: Clock, badge: printRequests.filter(r => r.status !== 'AWAITING_PICKUP').length, show: true },
-      { id: 'spools', label: 'Spools', icon: Disc, badge: spools.length, show: userRole.id !== 'REQUESTER' },
-      { id: 'logs', label: 'Logs', icon: History, badge: logs.filter((l) => !l.reverted).length, show: true },
-      { id: 'admin', label: 'Admin', icon: ShieldCheck, badge: isAdmin ? '★' : '', show: isAdmin }
-    ];
-    return all.filter(t => t.show);
-  }, [spools, printRequests, logs, isAdminOrOperator, userRole.id, isAdmin]);
-
-  const activeCatalogList = bambuLabColors;
-  const MATERIALS = useMemo(() => {
-    return Array.from(new Set(activeCatalogList.map(c => c.material)));
-  }, [activeCatalogList]);
 
   const ownerMap = useMemo(() => {
     const map = {};
@@ -308,6 +369,20 @@ export default function App() {
     });
     return `BBL-${maxNum + 1}`;
   }, [spools]);
+
+  const [batchConfig, setBatchConfig] = useState({
+    ownerId: currentUser?.id || 'own-1',
+    material: 'PLA Basic',
+    brand: 'Bambu Lab',
+    colorName: 'Jade White (10100)',
+    colorHex: '#FFFFFF',
+    initialWeight: 1000,
+    tareWeight: 250,
+    targetCount: 29
+  });
+  const [batchSessionSpools, setBatchSessionSpools] = useState([]);
+  const [batchBarcodeInput, setBatchBarcodeInput] = useState('');
+  const [slotScanBarcode, setSlotScanBarcode] = useState('');
 
   const handleBarcodeScanned = useCallback(
     async (rawCode) => {
@@ -439,6 +514,38 @@ export default function App() {
     [batchModalOpen, batchConfig, batchSessionSpools.length, loadSlotModal, spools, owners, currentUser, scanMode, soundEnabled, showToast, isAdminOrOperator]
   );
 
+  const keyBufferRef = useRef('');
+  const lastKeyTimeRef = useRef(0);
+
+  useEffect(() => {
+    if (!isAdminOrOperator) return;
+    const handleKeyDown = (e) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const activeTag = document.activeElement?.tagName?.toLowerCase();
+      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
+      const now = performance.now();
+      const delta = now - lastKeyTimeRef.current;
+      if (delta > 120) keyBufferRef.current = '';
+
+      if (e.key === 'Enter') {
+        if (keyBufferRef.current.length >= 4 && !isInputFocused) {
+          e.preventDefault();
+          const scanned = keyBufferRef.current;
+          keyBufferRef.current = '';
+          handleBarcodeScanned(scanned);
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !isInputFocused) {
+        keyBufferRef.current += e.key;
+        lastKeyTimeRef.current = now;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleBarcodeScanned, isAdminOrOperator]);
+
   const loadSpoolIntoSlot = async (spoolId, slot) => {
     const targetSpool = spools.find((s) => s.id === spoolId);
     if (!targetSpool) return;
@@ -472,11 +579,17 @@ export default function App() {
 
   const amsSlotMap = useMemo(() => {
     const map = { A1: null, A2: null, A3: null, A4: null };
+    spools.experiments = true; // placeholder tag
     spools.forEach((s) => {
       if (s.amsSlot && map.hasOwnProperty(s.amsSlot)) map[s.amsSlot] = s;
     });
     return map;
   }, [spools]);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [materialFilter, setMaterialFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [ownerFilter, setOwnerFilter] = useState('ALL');
 
   const filteredSpools = useMemo(() => {
     return spools.filter((s) => {
@@ -534,126 +647,6 @@ export default function App() {
       return new Date(a.createdAt) - new Date(b.createdAt);
     });
   }, [printRequests, ownerMap]);
-
-  // 3. ALL USE-EFFECT HOOKS
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3600);
-    return () => clearTimeout(t);
-  }, [toast]);
-
-  useEffect(() => {
-    if (!db) return;
-
-    try {
-      const unsubSpools = onSnapshot(collection(db, 'spools'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setSpools(list);
-      }, (err) => console.error("Spools sync error:", err));
-
-      const unsubOwners = onSnapshot(collection(db, 'owners'), (snapshot) => {
-        const list = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name || 'Unknown',
-            username: data.username || '',
-            pin: String(data.pin || ''),
-            isAdmin: Boolean(data.isAdmin),
-            accessRole: data.accessRole || (data.isAdmin ? 'ADMIN' : 'REQUESTER'),
-            role: data.role || 'Member',
-            colorIdx: Number(data.colorIdx ?? 0),
-            notes: data.notes || '',
-            ...data
-          };
-        });
-        setOwners(list);
-      }, (err) => console.error("Owners sync error:", err));
-
-      const unsubCatalog = onSnapshot(collection(db, 'catalog'), (snapshot) => {
-        const list = snapshot.docs
-          .map(d => ({ ...d.data(), id: d.id }))
-          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-        setBambuLabColors(list);
-      }, (err) => console.error("Catalog sync error:", err));
-
-      const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setLogs(list.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
-      }, (err) => console.error("Logs sync error:", err));
-
-      const unsubRequests = onSnapshot(collection(db, 'printRequests'), (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-        setPrintRequests(list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-      }, (err) => console.error("Requests sync error:", err));
-
-      return () => {
-        unsubSpools();
-        unsubOwners();
-        unsubCatalog();
-        unsubLogs();
-        unsubRequests();
-      };
-    } catch (e) {
-      console.error("Firestore subscription error:", e);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!currentUser || owners.length === 0) return;
-    const liveOwner = owners.find(o => o.id === currentUser.id);
-    if (liveOwner) setCurrentUser(liveOwner);
-  }, [owners]);
-
-  useEffect(() => {
-    if (!visibleTabs.some(t => t.id === activeTab)) {
-      setActiveTab(visibleTabs[0]?.id || 'queue');
-    }
-  }, [activeTab, visibleTabs]);
-
-  useEffect(() => {
-    if (!currentUser || printRequests.length === 0) return;
-    const userNotifs = printRequests.filter(req => req.ownerId === currentUser.id && (req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !req.notified);
-    if (userNotifs.length > 0) {
-      setLoginNotificationModal(userNotifs);
-    }
-  }, [currentUser, printRequests]);
-
-  useEffect(() => {
-    try {
-      if (currentUser) localStorage.setItem('zebra_ams_current_user_v1', JSON.stringify(currentUser));
-      else localStorage.removeItem('zebra_ams_current_user_v1');
-    } catch (e) {}
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!isAdminOrOperator) return;
-    const handleKeyDown = (e) => {
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-      const activeTag = document.activeElement?.tagName?.toLowerCase();
-      const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select';
-      const now = performance.now();
-      const delta = now - lastKeyTimeRef.current;
-      if (delta > 120) keyBufferRef.current = '';
-
-      if (e.key === 'Enter') {
-        if (keyBufferRef.current.length >= 4 && !isInputFocused) {
-          e.preventDefault();
-          const scanned = keyBufferRef.current;
-          keyBufferRef.current = '';
-          handleBarcodeScanned(scanned);
-        }
-        return;
-      }
-
-      if (e.key.length === 1 && !isInputFocused) {
-        keyBufferRef.current += e.key;
-        lastKeyTimeRef.current = now;
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleBarcodeScanned, isAdminOrOperator]);
 
   if (!currentUser) {
     return (
@@ -990,7 +983,7 @@ export default function App() {
                   <h2 className="text-base font-bold text-white flex items-center gap-2">
                     <Clock className="w-5 h-5 text-indigo-400" /> Print Requests & Production Queue ({printRequests.length})
                   </h2>
-                  <p className="text-xs text-zinc-400">Manage incoming print jobs, co-op approvals, and weighted priority workflow</p>
+                  <p className="text-xs text-zinc-400">Manage incoming print jobs, multi-owner approvals, and weighted priority workflow</p>
                 </div>
                 <button onClick={() => setRequestModalOpen(true)} className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow">
                   <Send className="w-4 h-4" /> Submit Print Request
@@ -1014,9 +1007,9 @@ export default function App() {
                       return { spool: sp, isForeign: sp && sp.ownerId !== req.ownerId, denied: req.deniedSpoolIds?.includes(id) };
                     }).filter(item => item.spool);
 
-                    const unapprovedForeign = foreignSpoolItems.filter(item => item.isForeign && !req.approved && !item.denied);
                     const isDenied = req.status === 'DENIED';
                     const isMyRequest = req.ownerId === currentUser.id;
+                    const canDismiss = isMyRequest || isAdmin;
 
                     return (
                       <div key={req.id} className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1061,18 +1054,44 @@ export default function App() {
                           <div className="flex flex-wrap gap-1.5 pt-1">
                             {foreignSpoolItems.map(({ spool, isForeign, denied }) => {
                               const spOwnerName = ownerMap[spool.ownerId]?.name;
-                              const canDenyThis = (currentUser.id === spool.ownerId || isAdmin) && req.status === 'WAITING_APPROVAL' && !denied;
+                              const isThisMySpool = spool.ownerId === currentUser.id;
+                              const canDeclineThisSpool = (isThisMySpool || isAdmin) && req.status === 'WAITING_APPROVAL' && !denied;
+                              const approvedByThisOwner = (req.approvedOwnerIds || []).includes(spool.ownerId);
+                              const canApproveThisSpool = isThisMySpool && req.status === 'WAITING_APPROVAL' && !approvedByThisOwner && !denied;
 
                               return (
-                                <div key={spool.id} className={`flex items-center gap-2 px-2 py-1 rounded text-[11px] font-mono border ${denied ? 'bg-rose-950/40 border-rose-500/50 text-rose-300 line-through' : isForeign ? 'bg-rose-500/10 border-rose-500/30 text-rose-300' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
-                                  <span>{spool.material} ({spool.colorName}) — Owner: {spOwnerName} {isForeign ? '(Co-op)' : ''}</span>
-                                  {canDenyThis && (
+                                <div key={spool.id} className={`flex items-center gap-2 px-2 py-1 rounded text-[11px] font-mono border ${denied ? 'bg-rose-950/40 border-rose-500/50 text-rose-300 line-through' : approvedByThisOwner ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200' : 'bg-zinc-900 border-zinc-800 text-zinc-300'}`}>
+                                  <span>{spool.material} ({spool.colorName}) — Owner: {spOwnerName}</span>
+                                  {approvedByThisOwner && <span className="text-[10px] text-emerald-400 font-bold">[APPROVED]</span>}
+                                  {canApproveThisSpool && (
+                                    <button
+                                      onClick={async () => {
+                                        const updatedApprovals = [...(req.approvedOwnerIds || []), spool.ownerId];
+                                        const allForeignOwners = Array.from(new Set(foreignSpoolItems.map(item => item.spool.ownerId)));
+                                        const allApproved = allForeignOwners.every(oid => updatedApprovals.includes(oid));
+
+                                        if (db) {
+                                          await setDoc(doc(db, 'printRequests', req.id), {
+                                            ...req,
+                                            approvedOwnerIds: updatedApprovals,
+                                            approved: allApproved,
+                                            status: allApproved ? 'APPROVED' : req.status
+                                          }, { merge: true }).catch(() => {});
+                                        }
+                                        showToast(`Approved your spool for "${req.title}"!`, 'success');
+                                      }}
+                                      className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] flex items-center gap-1 shadow"
+                                    >
+                                      <ThumbsUp className="w-3 h-3" /> Approve
+                                    </button>
+                                  )}
+                                  {canDeclineThisSpool && !denied && (
                                     <button
                                       onClick={() => setDenyModal({ request: req, spoolId: spool.id })}
                                       className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 shadow"
                                       title="Decline Spool & Leave Comment"
                                     >
-                                      <Ban className="w-3 h-3" /> Decline & Comment
+                                      <Ban className="w-3 h-3" /> Decline
                                     </button>
                                   )}
                                   {denied && <span className="text-[10px] text-rose-400 font-bold no-underline">[DECLINED]</span>}
@@ -1099,27 +1118,9 @@ export default function App() {
                             </button>
                           )}
 
-                          {unapprovedForeign.length > 0 && (isAdmin || unapprovedForeign.some(item => item.spool.ownerId === currentUser.id)) && (
-                            <button
-                              onClick={async () => {
-                                if (db) {
-                                  await setDoc(doc(db, 'printRequests', req.id), { ...req, approved: true, status: 'APPROVED' }, { merge: true }).catch(() => {});
-                                }
-                                showToast(`Approved print request for ${req.title}!`, 'success');
-                              }}
-                              className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1 shadow"
-                            >
-                              <ThumbsUp className="w-3.5 h-3.5" /> Approve Spools
-                            </button>
-                          )}
-
                           {req.status === 'APPROVED' && isAdminOrOperator && (
                             <button
                               onClick={async () => {
-                                if (unapprovedForeign.length > 0) {
-                                  showToast('Cannot accept: waiting for spool owner approval!', 'error');
-                                  return;
-                                }
                                 if (db) {
                                   await setDoc(doc(db, 'printRequests', req.id), { ...req, status: 'PREPARING' }, { merge: true }).catch(() => {});
                                 }
@@ -1140,13 +1141,13 @@ export default function App() {
                             </button>
                           )}
 
-                          {(req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && !isMyRequest && (
+                          {(req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && canDismiss && (
                             <button
                               onClick={async () => {
                                 if (db) {
                                   await deleteDoc(doc(db, 'printRequests', req.id));
                                 }
-                                showToast(`Archived print request.`, 'info');
+                                showToast(`Dismissed print request.`, 'info');
                               }}
                               className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold"
                             >
@@ -1838,6 +1839,7 @@ function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitReque
       ownerId: currentUser.id,
       selectedSpoolIds,
       deniedSpoolIds: [],
+      approvedOwnerIds: [],
       status: initialStatus,
       approved: foreignSpools.length === 0,
       createdAt: new Date().toISOString()
