@@ -46,7 +46,9 @@ import {
   PackageCheck,
   Bell,
   Ban,
-  Database
+  Database,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 // ============================================================================
@@ -59,8 +61,7 @@ import {
   doc, 
   setDoc, 
   deleteDoc, 
-  onSnapshot,
-  writeBatch
+  onSnapshot 
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -82,235 +83,6 @@ try {
 } catch (e) {
   console.error("Firebase init error:", e);
 }
-
-// ============================================================================
-// SEED DATASET (189 OFFICIAL BAMBU LAB FILAMENTS)
-// ============================================================================
-const SEED_BAMBU_CATALOG = [
-  { material: 'PLA Basic', name: 'Jade White (10100)', hex: '#FFFFFF' },
-  { material: 'PLA Basic', name: 'Beige (10201)', hex: '#F7E6DE' },
-  { material: 'PLA Basic', name: 'Light Gray (10104)', hex: '#D1D3D5' },
-  { material: 'PLA Basic', name: 'Yellow (10400)', hex: '#F4EE2A' },
-  { material: 'PLA Basic', name: 'Sunflower Yellow (10402)', hex: '#FEC600' },
-  { material: 'PLA Basic', name: 'Gold (10401)', hex: '#E4BD68' },
-  { material: 'PLA Basic', name: 'Pumpkin Orange (10301)', hex: '#FF9016' },
-  { material: 'PLA Basic', name: 'Orange (10300)', hex: '#FF6A13' },
-  { material: 'PLA Basic', name: 'Pink (10203)', hex: '#F55A74' },
-  { material: 'PLA Basic', name: 'Hot Pink (10204)', hex: '#F5547C' },
-  { material: 'PLA Basic', name: 'Magenta (10202)', hex: '#EC008C' },
-  { material: 'PLA Basic', name: 'Red (10200)', hex: '#C12E1F' },
-  { material: 'PLA Basic', name: 'Maroon Red (10205)', hex: '#9D2235' },
-  { material: 'PLA Basic', name: 'Purple (10700)', hex: '#5E43B7' },
-  { material: 'PLA Basic', name: 'Indigo Purple (10701)', hex: '#482960' },
-  { material: 'PLA Basic', name: 'Bright Green (10503)', hex: '#BECF00' },
-  { material: 'PLA Basic', name: 'Bambu Green (10501)', hex: '#00AE42' },
-  { material: 'PLA Basic', name: 'Mistletoe Green (10502)', hex: '#3F8E43' },
-  { material: 'PLA Basic', name: 'Turquoise (10605)', hex: '#00B1B7' },
-  { material: 'PLA Basic', name: 'Cyan (10603)', hex: '#0086D6' },
-  { material: 'PLA Basic', name: 'Cobalt Blue (10604)', hex: '#0056B8' },
-  { material: 'PLA Basic', name: 'Blue (10601)', hex: '#0A2989' },
-  { material: 'PLA Basic', name: 'Brown (10800)', hex: '#9D432C' },
-  { material: 'PLA Basic', name: 'Cocoa Brown (10802)', hex: '#6F5034' },
-  { material: 'PLA Basic', name: 'Bronze (10801)', hex: '#847D48' },
-  { material: 'PLA Basic', name: 'Gray (10103)', hex: '#8E9089' },
-  { material: 'PLA Basic', name: 'Silver (10102)', hex: '#A6A9AA' },
-  { material: 'PLA Basic', name: 'Blue Grey (10602)', hex: '#5B6579' },
-  { material: 'PLA Basic', name: 'Dark Gray (10105)', hex: '#545454' },
-  { material: 'PLA Basic', name: 'Black (10101)', hex: '#000000' },
-  { material: 'PLA Matte', name: 'Ivory White (11100)', hex: '#FFFFFF' },
-  { material: 'PLA Matte', name: 'Bone White (11103)', hex: '#CBC6B8' },
-  { material: 'PLA Matte', name: 'Lemon Yellow (11400)', hex: '#F7D959' },
-  { material: 'PLA Matte', name: 'Mandarin Orange (11300)', hex: '#F99963' },
-  { material: 'PLA Matte', name: 'Sakura Pink (11201)', hex: '#E8AFCF' },
-  { material: 'PLA Matte', name: 'Lilac Purple (11700)', hex: '#AE96D4' },
-  { material: 'PLA Matte', name: 'Plum (11204)', hex: '#950051' },
-  { material: 'PLA Matte', name: 'Scarlet Red (11200)', hex: '#DE4343' },
-  { material: 'PLA Matte', name: 'Dark Red (11202)', hex: '#BB3D43' },
-  { material: 'PLA Matte', name: 'Apple Green (11502)', hex: '#C2E189' },
-  { material: 'PLA Matte', name: 'Grass Green (11500)', hex: '#61C680' },
-  { material: 'PLA Matte', name: 'Dark Green (11501)', hex: '#68724D' },
-  { material: 'PLA Matte', name: 'Ice Blue (11601)', hex: '#A3D8E1' },
-  { material: 'PLA Matte', name: 'Sky Blue (11603)', hex: '#56B7E6' },
-  { material: 'PLA Matte', name: 'Marine Blue (11600)', hex: '#0078BF' },
-  { material: 'PLA Matte', name: 'Dark Blue (11602)', hex: '#042F56' },
-  { material: 'PLA Matte', name: 'Desert Tan (11401)', hex: '#E8DBB7' },
-  { material: 'PLA Matte', name: 'Latte Brown (11800)', hex: '#D3B7A7' },
-  { material: 'PLA Matte', name: 'Caramel (11803)', hex: '#AE835B' },
-  { material: 'PLA Matte', name: 'Terracotta (11203)', hex: '#B15533' },
-  { material: 'PLA Matte', name: 'Dark Brown (11801)', hex: '#7D6556' },
-  { material: 'PLA Matte', name: 'Dark Chocolate (11802)', hex: '#4D3324' },
-  { material: 'PLA Matte', name: 'Ash Gray (11102)', hex: '#9B9EA0' },
-  { material: 'PLA Matte', name: 'Nardo Gray (11104)', hex: '#757575' },
-  { material: 'PLA Matte', name: 'Charcoal (11101)', hex: '#000000' },
-  { material: 'PLA Tough+', name: 'Yellow (12401)', hex: '#F4D53F' },
-  { material: 'PLA Tough+', name: 'White (12107)', hex: '#FFFFFF' },
-  { material: 'PLA Tough+', name: 'Orange (12301)', hex: '#DC3A27' },
-  { material: 'PLA Tough+', name: 'Gray (12105)', hex: '#AFB1AE' },
-  { material: 'PLA Tough+', name: 'Silver (12106)', hex: '#959698' },
-  { material: 'PLA Tough+', name: 'Cyan (12601)', hex: '#009BD8' },
-  { material: 'PLA Tough+', name: 'Black (12104)', hex: '#000000' },
-  { material: 'PLA Pure', name: 'Milky Pink (17200)', hex: '#F7CED7' },
-  { material: 'PLA Pure', name: 'Baby Blue (17600)', hex: '#A4DBE8' },
-  { material: 'PLA Pure', name: 'Apricot (17300)', hex: '#FFB673' },
-  { material: 'PLA Pure', name: 'Pure White (17100)', hex: '#FFFFFF' },
-  { material: 'PLA Pure', name: 'Absolute Black (17101)', hex: '#000000' },
-  { material: 'PETG HF', name: 'Red (33200)', hex: '#EB3A3A' },
-  { material: 'PETG HF', name: 'Blue (33600)', hex: '#002E96' },
-  { material: 'PETG HF', name: 'Black (33102)', hex: '#000000' },
-  { material: 'PETG HF', name: 'White (33100)', hex: '#FFFFFF' },
-  { material: 'PETG HF', name: 'Gray (33101)', hex: '#ADB1B2' },
-  { material: 'PETG HF', name: 'Yellow (33400)', hex: '#FFD00B' },
-  { material: 'PETG HF', name: 'Orange (33300)', hex: '#F75403' },
-  { material: 'PETG HF', name: 'Green (33500)', hex: '#00AE42' },
-  { material: 'PETG HF', name: 'Forest Green (33502)', hex: '#39541A' },
-  { material: 'PETG HF', name: 'Peanut Brown (33801)', hex: '#875718' },
-  { material: 'PETG HF', name: 'Dark Gray (33103)', hex: '#515151' },
-  { material: 'PETG HF', name: 'Cream (33401)', hex: '#F9DFB9' },
-  { material: 'PETG HF', name: 'Lime Green (33501)', hex: '#6EE53C' },
-  { material: 'PETG HF', name: 'Lake Blue (33601)', hex: '#1F79E5' },
-  { material: 'PETG Basic', name: 'Orange (30301)', hex: '#FF671F' },
-  { material: 'PETG Basic', name: 'Red (30201)', hex: '#D6001C' },
-  { material: 'PETG Basic', name: 'Green (30502)', hex: '#009639' },
-  { material: 'PETG Basic', name: 'Yellow (30402)', hex: '#FCE300' },
-  { material: 'PETG Basic', name: 'Navy Blue (30604)', hex: '#0086D6' },
-  { material: 'PETG Basic', name: 'Reflex Blue (30603)', hex: '#001489' },
-  { material: 'PETG Basic', name: 'White (30106)', hex: '#FFFFFF' },
-  { material: 'PETG Basic', name: 'Dark Beige (30403)', hex: '#DBC8B6' },
-  { material: 'PETG Basic', name: 'Black (30105)', hex: '#000000' },
-  { material: 'PETG Basic', name: 'Dark Brown (30800)', hex: '#4F2C1D' },
-  { material: 'PETG Basic', name: 'Gray (30107)', hex: '#7F7E83' },
-  { material: 'PETG Basic', name: 'Misty Blue (30108)', hex: '#688197' },
-  { material: 'PETG Basic', name: 'Pine Green (30503)', hex: '#034638' },
-  { material: 'PETG Matte', name: 'Black (35101)', hex: '#000000' },
-  { material: 'PETG Matte', name: 'White (35100)', hex: '#FFFFFF' },
-  { material: 'PETG Matte', name: 'Gray (35102)', hex: '#7F7E83' },
-  { material: 'PETG Matte', name: 'Pink (35700)', hex: '#FABBCB' },
-  { material: 'PETG Matte', name: 'Violet (35702)', hex: '#A7A4E0' },
-  { material: 'PETG Matte', name: 'Baby Blue (35600)', hex: '#B9D9EB' },
-  { material: 'PETG Matte', name: 'Avocado Green (35501)', hex: '#BCE194' },
-  { material: 'PETG Matte', name: 'Lime (35500)', hex: '#C0DF16' },
-  { material: 'ABS', name: 'Orange (40300)', hex: '#FF6A13' },
-  { material: 'ABS', name: 'Blue (40600)', hex: '#0A2CA5' },
-  { material: 'ABS', name: 'Bambu Green (40500)', hex: '#00AE42' },
-  { material: 'ABS', name: 'Olive (40502)', hex: '#789D4A' },
-  { material: 'ABS', name: 'Silver (40102)', hex: '#87909A' },
-  { material: 'ABS', name: 'Red (40200)', hex: '#D32941' },
-  { material: 'ABS', name: 'Tangerine Yellow (40402)', hex: '#FFC72C' },
-  { material: 'ABS', name: 'Azure (40601)', hex: '#489FDF' },
-  { material: 'ABS', name: 'Navy Blue (40602)', hex: '#0C2340' },
-  { material: 'ABS', name: 'Black (40101)', hex: '#000000' },
-  { material: 'ABS', name: 'White (40100)', hex: '#FFFFFF' },
-  { material: 'ASA', name: 'White (45100)', hex: '#FFFAF2' },
-  { material: 'ASA', name: 'Red (45200)', hex: '#E02928' },
-  { material: 'ASA', name: 'Green (45500)', hex: '#00A6A0' },
-  { material: 'ASA', name: 'Gray (45102)', hex: '#8A949E' },
-  { material: 'ASA', name: 'Blue (45600)', hex: '#2140B4' },
-  { material: 'ASA', name: 'Black (45101)', hex: '#000000' },
-  { material: 'TPU 95A HF', name: 'White (51102)', hex: '#FFFFFF' },
-  { material: 'TPU 95A HF', name: 'Gray (51101)', hex: '#898D8D' },
-  { material: 'TPU 95A HF', name: 'Yellow (51400)', hex: '#F3E600' },
-  { material: 'TPU 95A HF', name: 'Blue (51600)', hex: '#0072CE' },
-  { material: 'TPU 95A HF', name: 'Red (51200)', hex: '#C8102E' },
-  { material: 'TPU 95A HF', name: 'Black (51100)', hex: '#101820' },
-  { material: 'TPU for AMS', name: 'Blue (53600)', hex: '#5898DD' },
-  { material: 'TPU for AMS', name: 'Red (53200)', hex: '#ED0000' },
-  { material: 'TPU for AMS', name: 'Yellow (53400)', hex: '#F9EF41' },
-  { material: 'TPU for AMS', name: 'Gray (53102)', hex: '#939393' },
-  { material: 'TPU for AMS', name: 'Neon Green (53500)', hex: '#90FF1A' },
-  { material: 'TPU for AMS', name: 'White (53100)', hex: '#FFFFFF' },
-  { material: 'TPU for AMS', name: 'Black (53101)', hex: '#000001' },
-  { material: 'PLA Glow', name: 'Glow Green (15500)', hex: '#A1FFAC' },
-  { material: 'PLA Glow', name: 'Glow Pink (15200)', hex: '#F17B8F' },
-  { material: 'PLA Glow', name: 'Glow Blue (15600)', hex: '#7AC0E9' },
-  { material: 'PLA Glow', name: 'Glow Orange (15300)', hex: '#FF9D5B' },
-  { material: 'PLA Glow', name: 'Glow Yellow (15400)', hex: '#F8FF80' },
-  { material: 'PLA Silk+', name: 'Pink (13207)', hex: '#F7ADA6' },
-  { material: 'PLA Silk+', name: 'Gold (13405)', hex: '#F4A925' },
-  { material: 'PLA Silk+', name: 'Silver (13109)', hex: '#C8C8C8' },
-  { material: 'PLA Silk+', name: 'Titan Gray (13108)', hex: '#5F6367' },
-  { material: 'PLA Silk+', name: 'Candy Red (13205)', hex: '#D02727' },
-  { material: 'PLA Silk+', name: 'Candy Green (13506)', hex: '#018814' },
-  { material: 'PLA Silk+', name: 'Blue (13604)', hex: '#008BDA' },
-  { material: 'PLA Silk+', name: 'Purple (13702)', hex: '#8671CB' },
-  { material: 'PLA Silk+', name: 'Rose Gold (13206)', hex: '#BA9594' },
-  { material: 'PLA Silk+', name: 'Baby Blue (13603)', hex: '#A8C6EE' },
-  { material: 'PLA Silk+', name: 'Mint (13507)', hex: '#96DCB9' },
-  { material: 'PLA Silk+', name: 'Champagne (13404)', hex: '#F3CFB2' },
-  { material: 'PLA Silk+', name: 'White (13110)', hex: '#FFFFFF' },
-  { material: 'PLA Silk Multi-Color', name: 'Dawn Radiance (13912)', hex: '#EC984C' },
-  { material: 'PLA Silk Multi-Color', name: 'Aurora Purple (13909)', hex: '#7F3696' },
-  { material: 'PLA Silk Multi-Color', name: 'South Beach (13906)', hex: '#F772A4' },
-  { material: 'PLA Silk Multi-Color', name: 'Neon City (13903)', hex: '#0047BB' },
-  { material: 'PLA Silk Multi-Color', name: 'Midnight Blaze (13902)', hex: '#0047BB' },
-  { material: 'PLA Silk Multi-Color', name: 'Blue Hawaii (13904)', hex: '#418FDE' },
-  { material: 'PLA Silk Multi-Color', name: 'Gilded Rose (13901)', hex: '#FF9425' },
-  { material: 'PLA Silk Multi-Color', name: 'Velvet Eclipse (13905)', hex: '#000000' },
-  { material: 'PLA Silk Multi-Color', name: 'Mystic Magenta (13913)', hex: '#720062' },
-  { material: 'PLA Silk Multi-Color', name: 'Phantom Blue (13916)', hex: '#00629B' },
-  { material: 'PLA Basic Gradient', name: 'Blueberry Bubblegum (10905)', hex: '#6FCAEF' },
-  { material: 'PLA Basic Gradient', name: 'Cotton Candy Cloud (10907)', hex: '#E7C1D5' },
-  { material: 'PLA Basic Gradient', name: 'Pink Citrus (10903)', hex: '#F78F77' },
-  { material: 'PLA Basic Gradient', name: 'Mint Lime (10904)', hex: '#B6FF43' },
-  { material: 'PLA Basic Gradient', name: 'Dusk Glare (10906)', hex: '#CE4406' },
-  { material: 'PLA Basic Gradient', name: 'Ocean to Meadow (10902)', hex: '#307FE2' },
-  { material: 'PLA Basic Gradient', name: 'Solar Breeze (10901)', hex: '#E94B3C' },
-  { material: 'PLA Basic Gradient', name: 'Arctic Whisper (10900)', hex: '#9CDBD9' },
-  { material: 'PLA Marble', name: 'Red Granite (13201)', hex: '#AD4E38' },
-  { material: 'PLA Marble', name: 'White Marble (13103)', hex: '#F7F3F0' },
-  { material: 'PLA Sparkle', name: 'Alpine Green Sparkle (13501)', hex: '#3F5443' },
-  { material: 'PLA Sparkle', name: 'Slate Gray Sparkle (13102)', hex: '#8E9089' },
-  { material: 'PLA Sparkle', name: 'Royal Purple Sparkle (13700)', hex: '#483D8B' },
-  { material: 'PLA Sparkle', name: 'Crimson Red Sparkle (13200)', hex: '#792B36' },
-  { material: 'PLA Sparkle', name: 'Onyx Black Sparkle (13101)', hex: '#2D2B28' },
-  { material: 'PLA Sparkle', name: 'Classic Gold Sparkle (13402)', hex: '#CEA629' },
-  { material: 'PLA Galaxy', name: 'Purple (13602)', hex: '#594177' },
-  { material: 'PLA Galaxy', name: 'Green (13503)', hex: '#3B665E' },
-  { material: 'PLA Galaxy', name: 'Nebulae (13504)', hex: '#424379' },
-  { material: 'PLA Galaxy', name: 'Brown (13203)', hex: '#684A43' },
-  { material: 'PLA Metal', name: 'Cobalt Blue Metallic (13600)', hex: '#39699E' },
-  { material: 'PLA Metal', name: 'Oxide Green Metallic (13500)', hex: '#1D7C6A' },
-  { material: 'PLA Metal', name: 'Iridium Gold Metallic (13400)', hex: '#B39B84' },
-  { material: 'PLA Metal', name: 'Copper Brown Metallic (13800)', hex: '#AA6443' },
-  { material: 'PLA Metal', name: 'Iron Gray Metallic (13100)', hex: '#43403D' },
-  { material: 'PLA Wood', name: 'Black Walnut (13107)', hex: '#4F3F24' },
-  { material: 'PLA Wood', name: 'Rosewood (13204)', hex: '#4C241C' },
-  { material: 'PLA Wood', name: 'Clay Brown (13801)', hex: '#995F11' },
-  { material: 'PLA Wood', name: 'Classic Birch (13505)', hex: '#918669' },
-  { material: 'PLA Wood', name: 'White Oak (13106)', hex: '#D6CCA3' },
-  { material: 'PLA Wood', name: 'Ochre Yellow (13403)', hex: '#C98935' },
-  { material: 'PLA Translucent', name: 'Teal (13612)', hex: '#009FA1' },
-  { material: 'PLA Translucent', name: 'Blue (13611)', hex: '#0047BB' },
-  { material: 'PLA Translucent', name: 'Purple (13710)', hex: '#8344B0' },
-  { material: 'PLA Translucent', name: 'Orange (13301)', hex: '#F74E02' },
-  { material: 'PLA Translucent', name: 'Red (13210)', hex: '#B50011' },
-  { material: 'PLA Translucent', name: 'Light Jade (13510)', hex: '#96D8AF' },
-  { material: 'PLA Translucent', name: 'Mellow Yellow (13410)', hex: '#F5DBAB' },
-  { material: 'PLA Translucent', name: 'Cherry Pink (13211)', hex: '#F5B6CD' },
-  { material: 'PLA Translucent', name: 'Ice Blue (13610)', hex: '#B8CDE9' },
-  { material: 'PLA Translucent', name: 'Lavender (13711)', hex: '#B8ACD6' },
-  { material: 'PETG Translucent', name: 'Light Blue (32600)', hex: '#61B0FF' },
-  { material: 'PETG Translucent', name: 'Teal (32501)', hex: '#77EDD7' },
-  { material: 'PETG Translucent', name: 'Clear (32101)', hex: '#E2E8F0' },
-  { material: 'PETG Translucent', name: 'Olive (32500)', hex: '#748C45' },
-  { material: 'PETG Translucent', name: 'Brown (32800)', hex: '#C9A381' },
-  { material: 'PETG Translucent', name: 'Orange (32300)', hex: '#FF911A' },
-  { material: 'PETG Translucent', name: 'Purple (32700)', hex: '#D6ABFF' },
-  { material: 'PETG Translucent', name: 'Pink (32200)', hex: '#F9C1BD' },
-  { material: 'PETG Translucent', name: 'Gray (32100)', hex: '#8E8E8E' },
-  { material: 'PLA-CF', name: 'Burgundy Red (14200)', hex: '#951E23' },
-  { material: 'PLA-CF', name: 'Jeans Blue (14600)', hex: '#6E88BC' },
-  { material: 'PLA-CF', name: 'Lava Gray (14101)', hex: '#4D5054' },
-  { material: 'PLA-CF', name: 'Matcha Green (14500)', hex: '#5C9748' },
-  { material: 'PLA-CF', name: 'Royal Blue (14601)', hex: '#2842AD' },
-  { material: 'PLA-CF', name: 'Iris Purple (14700)', hex: '#69398E' },
-  { material: 'PLA-CF', name: 'Black (14100)', hex: '#000000' },
-  { material: 'PETG-CF', name: 'Violet Purple (31700)', hex: '#583061' },
-  { material: 'PETG-CF', name: 'Indigo Blue (31600)', hex: '#324585' },
-  { material: 'PETG-CF', name: 'Brick Red (31200)', hex: '#9F332A' },
-  { material: 'PETG-CF', name: 'Black (31100)', hex: '#000000' },
-  { material: 'PETG-CF', name: 'Malachite Green (31500)', hex: '#16B08E' },
-  { material: 'PETG-CF', name: 'Titan Gray (31101)', hex: '#565656' }
-];
 
 const OWNER_COLORS = [
   { name: 'Amber', bg: 'bg-amber-500/20', text: 'text-amber-300', border: 'border-amber-500/50', hex: '#F59E0B' },
@@ -425,7 +197,6 @@ export default function App() {
   const [logs, setLogs] = useState([]);
   const [printRequests, setPrintRequests] = useState([]);
   const [bambuLabColors, setBambuLabColors] = useState([]);
-  const [isSeedingCatalog, setIsSeedingCatalog] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [loginNotificationModal, setLoginNotificationModal] = useState(null);
   const [toast, setToast] = useState(null);
@@ -440,36 +211,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const seedFirestoreCatalog = useCallback(async () => {
-    if (!db) {
-      showToast('Firestore is not connected!', 'error');
-      return;
-    }
-    setIsSeedingCatalog(true);
-    try {
-      const batch = writeBatch(db);
-      SEED_BAMBU_CATALOG.forEach((item, index) => {
-        const docId = `cat-${String(index + 1).padStart(3, '0')}`;
-        const ref = doc(db, 'catalog', docId);
-        batch.set(ref, {
-          id: docId,
-          material: item.material,
-          name: item.name,
-          hex: item.hex || '#FFFFFF',
-          order: index + 1
-        });
-      });
-      await batch.commit();
-      playZebraBeep('success', soundEnabled);
-      showToast(`Successfully seeded all ${SEED_BAMBU_CATALOG.length} colors to Firestore!`, 'success');
-    } catch (err) {
-      console.error("Failed to seed catalog:", err);
-      showToast(`Catalog seed error: ${err.message}`, 'error');
-    } finally {
-      setIsSeedingCatalog(false);
-    }
-  }, [soundEnabled, showToast]);
-
+  // --- Real-time Firestore Sync ---
   useEffect(() => {
     if (!db) return;
 
@@ -498,14 +240,10 @@ export default function App() {
       }, (err) => console.error("Owners sync error:", err));
 
       const unsubCatalog = onSnapshot(collection(db, 'catalog'), (snapshot) => {
-        if (!snapshot.empty) {
-          const list = snapshot.docs
-            .map(d => ({ ...d.data(), id: d.id }))
-            .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
-          setBambuLabColors(list);
-        } else {
-          seedFirestoreCatalog();
-        }
+        const list = snapshot.docs
+          .map(d => ({ ...d.data(), id: d.id }))
+          .sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
+        setBambuLabColors(list);
       }, (err) => console.error("Catalog sync error:", err));
 
       const unsubLogs = onSnapshot(collection(db, 'logs'), (snapshot) => {
@@ -528,9 +266,9 @@ export default function App() {
     } catch (e) {
       console.error("Firestore subscription error:", e);
     }
-  }, [seedFirestoreCatalog]);
+  }, []);
 
-  const activeCatalogList = bambuLabColors.length > 0 ? bambuLabColors : SEED_BAMBU_CATALOG;
+  const activeCatalogList = bambuLabColors;
   const MATERIALS = useMemo(() => {
     return Array.from(new Set(activeCatalogList.map(c => c.material)));
   }, [activeCatalogList]);
@@ -1437,7 +1175,9 @@ export default function App() {
                             <span className="text-xs text-zinc-400">({person.role})</span>
                             {person.isAdmin && <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 font-bold">Admin</span>}
                           </div>
-                          <p className="text-xs text-zinc-400 font-mono">Username: <span className="text-white">{person.username}</span> • Password: <span className="text-amber-400 font-bold">{person.pin}</span></p>
+                          <p className="text-xs text-zinc-400 font-mono">
+                            Username: <span className="text-white">{person.username}</span> • Password: <span className="text-zinc-500 italic">•••••••• (Hidden for Security)</span>
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -1492,30 +1232,9 @@ export default function App() {
               <div className="flex items-center gap-2.5 pb-3 border-b border-zinc-800">
                 <ShieldCheck className="w-6 h-6 text-amber-400" />
                 <div>
-                  <h2 className="text-base font-bold text-white">System Admin & Cloud Catalog Controls</h2>
-                  <p className="text-xs text-zinc-400">Manage Firestore 'catalog' seeding and system resets</p>
+                  <h2 className="text-base font-bold text-white">System Admin Controls</h2>
+                  <p className="text-xs text-zinc-400">Manage database resets and security</p>
                 </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <Database className="w-4 h-4 text-emerald-400" /> Firestore 'catalog' Status
-                    </h3>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      Currently synced documents in Firestore <code className="text-amber-300">catalog</code> collection: <strong className="text-emerald-400">{bambuLabColors.length}</strong> / {SEED_BAMBU_CATALOG.length}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={seedFirestoreCatalog}
-                  disabled={isSeedingCatalog}
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-extrabold text-xs flex items-center gap-2 shadow"
-                >
-                  <Upload className="w-4 h-4" />
-                  {isSeedingCatalog ? 'Seeding 189 Filaments to Firestore...' : `Seed / Overwrite Full 189-Color Catalog to Firestore`}
-                </button>
               </div>
 
               {currentUser.isAdmin && (
@@ -1803,15 +1522,20 @@ export default function App() {
       {ownerModal && (
         <OwnerFormModal
           modalData={ownerModal}
+          currentUser={currentUser}
           onClose={() => setOwnerModal(null)}
           onSave={async (savedOwner) => {
             const ownerId = savedOwner.id || `own-${owners.length + 1}`;
             const existingOwner = owners.find(o => o.id === ownerId);
+            
+            // If editing and password field is blank/untouched, keep existing PIN
+            const finalPin = (savedOwner.pin === '' || savedOwner.pin === undefined) && existingOwner ? existingOwner.pin : savedOwner.pin;
             const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : (existingOwner ? existingOwner.isAdmin : false);
 
             const finalOwner = {
               ...(existingOwner || {}),
               ...savedOwner,
+              pin: finalPin,
               id: ownerId,
               isAdmin: finalIsAdmin
             };
@@ -2122,8 +1846,11 @@ function SpoolFormModal({ modalData, owners, bambuLabColors, materials, onClose,
   );
 }
 
-function OwnerFormModal({ modalData, onClose, onSave }) {
+function OwnerFormModal({ modalData, currentUser, onClose, onSave }) {
   const [form, setForm] = useState(modalData.owner);
+  const [newPin, setNewPin] = useState('');
+  const [showPasswordInput, setShowPasswordInput] = useState(!modalData.isEdit);
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3">
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
@@ -2134,7 +1861,7 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
         <form onSubmit={(e) => { 
           e.preventDefault(); 
           if (!form.name.trim()) return; 
-          onSave(form); 
+          onSave({ ...form, pin: newPin !== '' ? newPin : form.pin }); 
         }} className="p-4 space-y-3">
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Full Name</label>
@@ -2146,8 +1873,17 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
               <input type="text" required value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
             </div>
             <div>
-              <label className="text-xs text-zinc-400 block mb-1">Login Password</label>
-              <input type="text" required value={form.pin || ''} onChange={(e) => setForm({ ...form, pin: e.target.value.trim() })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-white" />
+              <label className="text-xs text-zinc-400 block mb-1">Login Password / PIN</label>
+              {modalData.isEdit && !showPasswordInput ? (
+                <div className="flex items-center gap-1.5">
+                  <input type="password" disabled value="********" className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs font-mono text-zinc-500 cursor-not-allowed" />
+                  <button type="button" onClick={() => setShowPasswordInput(true)} className="px-2.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-amber-400 font-bold text-[10px] rounded-lg shrink-0" title="Change Password">
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <input type="text" required={!modalData.isEdit} value={newPin} onChange={(e) => setNewPin(e.target.value.trim())} placeholder={modalData.isEdit ? "Enter new password..." : "Password..."} className="w-full px-3 py-2 bg-zinc-950 border border-amber-500/60 rounded-lg text-xs font-mono text-amber-300 focus:outline-none" />
+              )}
             </div>
           </div>
           <div>
@@ -2155,12 +1891,12 @@ function OwnerFormModal({ modalData, onClose, onSave }) {
             <input type="text" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div>
-            <label className="text-xs text-zinc-400 code block mb-1">Notes / Description</label>
+            <label className="text-xs text-zinc-400 block mb-1">Notes / Description</label>
             <input type="text" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} className="w-full px-3.5 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!form.isAdmin} onChange={(e) => {}} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0 opacity-60 cursor-not-allowed" />
-            <label htmlFor="isAdminCheck" className="text-xs text-zinc-400 select-none">Grant Administrator Privileges (Locked)</label>
+            <input type="checkbox" id="isAdminCheck" checked={Boolean(form.isAdmin)} disabled={!currentUser.isAdmin} onChange={(e) => setForm({ ...form, isAdmin: e.target.checked })} className="rounded bg-zinc-950 border-zinc-700 text-amber-500 focus:ring-0" />
+            <label htmlFor="isAdminCheck" className="text-xs text-zinc-400 select-none">Grant Administrator Privileges</label>
           </div>
           <button type="submit" className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold text-xs uppercase">
             Save User & Credentials
