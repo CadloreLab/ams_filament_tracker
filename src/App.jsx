@@ -87,7 +87,7 @@ try {
 }
 
 // ============================================================================
-// RBAC ROLES DEFINITION
+// RBAC ROLES DEFINITION & HELPERS
 // ============================================================================
 const ROLES = {
   ADMIN: { id: 'ADMIN', label: 'Admin', priorityWeight: 3, badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
@@ -314,14 +314,10 @@ export default function App() {
   const visibleTabs = allTabs.filter(t => t.show);
 
   useEffect(() => {
-    if (!visibleDataTabAllowed(activeTab, visibleTabs)) {
+    if (!visibleTabs.some(t => t.id === activeTab)) {
       setActiveTab(visibleTabs[0]?.id || 'queue');
     }
-  }, [userRole, activeTab]);
-
-  function visibleDataTabAllowed(tabId, tabs) {
-    return tabs.some(t => t.id === tabId);
-  }
+  }, [userRole, activeTab, visibleTabs]);
 
   useEffect(() => {
     if (!currentUser || printRequests.length === 0) return;
@@ -1688,7 +1684,7 @@ export default function App() {
             const existingOwner = owners.find(o => o.id === ownerId);
             
             const finalPin = (savedOwner.pin === '' || savedOwner.pin === undefined) && existingOwner ? existingOwner.pin : savedOwner.pin;
-            const finalIsAdmin = currentUser.isAdmin ? savedOwner.isAdmin : (existingOwner ? existingOwner.isAdmin : false);
+            const finalIsAdmin = savedOwner.accessRole === 'ADMIN';
 
             const finalOwner = {
               ...(existingOwner || {}),
@@ -1701,7 +1697,7 @@ export default function App() {
             if (db) {
               await setDoc(doc(db, 'owners', ownerId), finalOwner, { merge: true }).catch(() => {});
             }
-            showToast(`Saved user/owner ${finalOwner.name}`, 'success');
+            showToast(`Saved user account ${finalOwner.name}`, 'success');
             if (currentUser.id === ownerId) setCurrentUser(finalOwner);
             setOwnerModal(null);
           }}
