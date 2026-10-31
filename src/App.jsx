@@ -1121,10 +1121,38 @@ export default function App() {
                             <button
                               onClick={async () => {
                                 if (confirm(`Cancel your print request "${req.title}"?`)) {
+                                  // Log cancellation as a denied/cancelled record in history
+                                  const logId = `log-${Date.now()}`;
+                                  const cancelLog = {
+                                    id: logId,
+                                    timestamp: new Date().toISOString(),
+                                    jobName: `${req.title} (Cancelled)`,
+                                    status: 'CANCELLED',
+                                    totalGrams: 0,
+                                    makerWorldUrl: req.makerWorldUrl || '',
+                                    requestComment: req.requestComment || '',
+                                    submitterName: reqOwnerName,
+                                    reverted: false,
+                                    usages: (req.selectedSpoolIds || []).map(id => {
+                                      const sp = spools.find(s => s.id === id);
+                                      return {
+                                        spoolId: id,
+                                        barcode: sp?.barcode || 'BBL-XXX',
+                                        material: sp?.material || 'PLA Basic',
+                                        colorName: sp?.colorName || 'Color',
+                                        colorHex: sp?.colorHex || '#FFFFFF',
+                                        ownerId: sp?.ownerId || req.ownerId,
+                                        slot: sp?.amsSlot || null,
+                                        grams: 0
+                                      };
+                                    })
+                                  };
+
                                   if (db) {
+                                    await setDoc(doc(db, 'logs', logId), cancelLog).catch(() => {});
                                     await deleteDoc(doc(db, 'printRequests', req.id));
                                   }
-                                  showToast('Print request cancelled.', 'info');
+                                  showToast('Print request cancelled and logged.', 'info');
                                 }
                               }}
                               className="px-3 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 font-bold text-xs flex items-center gap-1 shadow transition"
@@ -1159,6 +1187,39 @@ export default function App() {
                           {(req.status === 'AWAITING_PICKUP' || req.status === 'DENIED') && canDismiss && (
                             <button
                               onClick={async () => {
+                                // If denied, log it to history before deleting
+                                if (req.status === 'DENIED') {
+                                  const logId = `log-${Date.now()}`;
+                                  const deniedLog = {
+                                    id: logId,
+                                    timestamp: new Date().toISOString(),
+                                    jobName: `${req.title} (Declined)`,
+                                    status: 'DENIED',
+                                    totalGrams: 0,
+                                    makerWorldUrl: req.makerWorldUrl || '',
+                                    requestComment: req.requestComment || '',
+                                    submitterName: reqOwnerName,
+                                    denyReason: req.denyReason || 'Declined',
+                                    reverted: false,
+                                    usages: (req.selectedSpoolIds || []).map(id => {
+                                      const sp = spools.find(s => s.id === id);
+                                      return {
+                                        spoolId: id,
+                                        barcode: sp?.barcode || 'BBL-XXX',
+                                        material: sp?.material || 'PLA Basic',
+                                        colorName: sp?.colorName || 'Color',
+                                        colorHex: sp?.colorHex || '#FFFFFF',
+                                        ownerId: sp?.ownerId || req.ownerId,
+                                        slot: sp?.amsSlot || null,
+                                        grams: 0
+                                      };
+                                    })
+                                  };
+                                  if (db) {
+                                    await setDoc(doc(db, 'logs', logId), deniedLog).catch(() => {});
+                                  }
+                                }
+
                                 if (db) {
                                   await deleteDoc(doc(db, 'printRequests', req.id));
                                 }
@@ -1294,28 +1355,73 @@ export default function App() {
 
         {activeTab === 'logs' && (
           <div className="space-y-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-4">
               <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <History className="w-4 h-4 text-amber-400" /> Print Usage & Deduction History ({logs.length})
+                <History className="w-4 h-4 text-amber-400" /> Print Usage & Submission History ({logs.length})
               </h3>
               {logs.length === 0 ? (
-                <p className="text-xs text-zinc-500 py-4 text-center">No print logs recorded yet.</p>
+                <p className="text-xs text-zinc-500 py-6 text-center">No print logs or submissions recorded yet.</p>
               ) : (
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   {logs.map((log) => {
-                    const isMyLog = userRole.id === 'REQUESTER' ? log.usages?.some(u => u.ownerId === currentUser.id) : true;
+                    const isMyLog = userRole.id === 'REQUESTER' ? (log.submitterName === currentUser.name || log.usages?.some(u => u.ownerId === currentUser.id)) : true;
                     if (userRole.id === 'REQUESTER' && !isMyLog) return null;
 
+                    const isDeclined = log.status === 'DENIED' || log.status === 'CANCELLED';
+
                     return (
-                      <div key={log.id} className="p-3.5 rounded-xl bg-zinc-950 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">{log.status}</span>
-                            <span className="text-sm font-bold text-white">{log.jobName}</span>
+                      <div key={log.id} className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-2.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              log.status === 'SUCCESS' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' :
+                              log.status === 'DENIED' ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' :
+                              'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            }`}>
+                              {log.status}
+                            </span>
+                            <span className="text-sm font-extrabold text-white">{log.jobName}</span>
                           </div>
-                          <div className="text-[11px] font-mono text-zinc-500">{new Date(log.timestamp).toLocaleString()}</div>
+                          <span className="text-xs font-mono text-amber-400 font-bold">
+                            {log.totalGrams > 0 ? `-${log.totalGrams}g total` : '0g'}
+                          </span>
                         </div>
-                        <span className="text-sm font-mono font-extrabold text-amber-400">-{log.totalGrams}g total</span>
+
+                        <div className="text-xs text-zinc-400 flex flex-wrap gap-4 font-mono">
+                          <span>Submitter: <strong className="text-white">{log.submitterName || 'Unknown'}</strong></span>
+                          <span>Timestamp: {new Date(log.timestamp).toLocaleString()}</span>
+                          {log.makerWorldUrl && (
+                            <a href={log.makerWorldUrl} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline inline-flex items-center gap-1">
+                              MakerWorld Link <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+
+                        {log.requestComment && (
+                          <div className="text-xs text-zinc-300 italic bg-zinc-900/60 p-2 rounded border border-zinc-800">
+                            Comment: "{log.requestComment}"
+                          </div>
+                        )}
+
+                        {log.denyReason && (
+                          <div className="text-xs text-rose-300 italic bg-rose-950/30 p-2 rounded border border-rose-500/30">
+                            Denial / Decline Reason: "{log.denyReason}"
+                          </div>
+                        )}
+
+                        {log.usages && log.usages.length > 0 && (
+                          <div className="pt-1 flex flex-wrap gap-1.5">
+                            {log.usages.map((u, idx) => {
+                              const spoolOwner = ownerMap[u.ownerId]?.name || 'Co-Op Owner';
+                              return (
+                                <div key={idx} className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono text-zinc-300 flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: getPrimaryHex(u.colorHex) }} />
+                                  <span>{u.material} ({u.colorName}) — {u.grams}g ({spoolOwner})</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1450,6 +1556,9 @@ export default function App() {
           onClose={() => setDenyModal(null)}
           onDeny={async ({ request, spoolId, reason }) => {
             const updatedDenied = [...(request.deniedSpoolIds || []), spoolId];
+            const isFullyDenied = updatedDenied.length > 0;
+            const reqOwnerName = ownerMap[request.ownerId]?.name || 'Unknown';
+
             if (db) {
               await setDoc(doc(db, 'printRequests', request.id), {
                 ...request,
@@ -1457,9 +1566,39 @@ export default function App() {
                 status: 'DENIED',
                 denyReason: reason || 'Owner declined spool usage.'
               }, { merge: true }).catch(() => {});
+
+              // Log declined/denied request immediately to history log
+              const logId = `log-${Date.now()}`;
+              const declinedLog = {
+                id: logId,
+                timestamp: new Date().toISOString(),
+                jobName: `${request.title} (Declined)`,
+                status: 'DENIED',
+                totalGrams: 0,
+                makerWorldUrl: request.makerWorldUrl || '',
+                requestComment: request.requestComment || '',
+                submitterName: reqOwnerName,
+                denyReason: reason || 'Owner declined spool usage.',
+                reverted: false,
+                usages: (request.selectedSpoolIds || []).map(id => {
+                  const sp = spools.find(s => s.id === id);
+                  return {
+                    spoolId: id,
+                    barcode: sp?.barcode || 'BBL-XXX',
+                    material: sp?.material || 'PLA Basic',
+                    colorName: sp?.colorName || 'Color',
+                    colorHex: sp?.colorHex || '#FFFFFF',
+                    ownerId: sp?.ownerId || request.ownerId,
+                    slot: sp?.amsSlot || null,
+                    grams: 0
+                  };
+                })
+              };
+              await setDoc(doc(db, 'logs', logId), declinedLog).catch(() => {});
             }
+
             setDenyModal(null);
-            showToast('Spool declined with comment.', 'warning');
+            showToast('Spool declined and logged.', 'warning');
           }}
         />
       )}
@@ -1629,6 +1768,8 @@ export default function App() {
           onClose={() => setCompleteRequestModal(null)}
           onComplete={async ({ usageGrams }) => {
             const req = completeRequestModal.request;
+            const reqOwnerName = ownerMap[req.ownerId]?.name || currentUser.name;
+
             if (req.selectedSpoolIds.length > 0) {
               const targetSpoolId = req.selectedSpoolIds[0];
               const targetSpool = spools.find(s => s.id === targetSpoolId);
@@ -1648,8 +1789,11 @@ export default function App() {
               jobName: req.title,
               status: 'SUCCESS',
               totalGrams: usageGrams,
+              makerWorldUrl: req.makerWorldUrl || '',
+              requestComment: req.requestComment || '',
+              submitterName: reqOwnerName,
               reverted: false,
-              usages: req.selectedSpoolIds.map(id => {
+              usages: (req.selectedSpoolIds || []).map(id => {
                 const sp = spools.find(s => s.id === id);
                 return {
                   spoolId: id,
@@ -1668,7 +1812,7 @@ export default function App() {
             }
 
             setCompleteRequestModal(null);
-            showToast(`Print marked completed (-${usageGrams}g). Moved to Awaiting Pickup!`, 'success');
+            showToast(`Print marked completed (-${usageGrams}g). Moved to Awaiting Pickup and logged!`, 'success');
           }}
         />
       )}
@@ -2102,7 +2246,7 @@ function OwnerFormModal({ modalData, currentUser, onClose, onSave }) {
         }} className="p-4 space-y-3">
           <div>
             <label className="text-xs text-zinc-400 block mb-1">Full Name</label>
-            <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
+            <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: form.name = e.target.value })} className="w-full px-3 py-2 bg-zinc-950 border border-zinc-700 rounded-lg text-xs text-white" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
