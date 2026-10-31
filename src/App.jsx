@@ -50,7 +50,8 @@ import {
   Eye,
   EyeOff,
   UserCog,
-  KeyRound
+  KeyRound,
+  MessageSquare
 } from 'lucide-react';
 
 // ============================================================================
@@ -201,7 +202,6 @@ const SpoolGaugeSVG = ({ hex = '#00AE42', percentage = 75, size = 54 }) => {
 };
 
 export default function App() {
-  // 1. ALL STATES DECLARED FIRST
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem('zebra_ams_current_user_v1');
@@ -260,7 +260,6 @@ export default function App() {
   const keyBufferRef = useRef('');
   const lastKeyTimeRef = useRef(0);
 
-  // 2. DERIVED VALUES & MEMOS DECLARED AFTER STATES
   const showToast = useCallback((message, type = 'info') => {
     setToast({ message, type, id: Date.now() });
   }, []);
@@ -1049,6 +1048,15 @@ export default function App() {
                             )}
                           </div>
 
+                          {req.requestComment && (
+                            <div className="p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-500/40 text-xs text-indigo-200 space-y-1">
+                              <div className="font-bold flex items-center gap-1.5">
+                                <MessageSquare className="w-3.5 h-3.5 text-indigo-400" /> Requester Comment:
+                              </div>
+                              <div className="text-zinc-300 italic">"{req.requestComment}"</div>
+                            </div>
+                          )}
+
                           {isDenied && (
                             <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200 space-y-1">
                               <div className="font-bold flex items-center gap-1.5">
@@ -1830,6 +1838,7 @@ function DenySpoolModal({ request, spoolId, spools, onClose, onDeny }) {
 function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitRequest }) {
   const [title, setTitle] = useState('');
   const [makerWorldUrl, setMakerWorldUrl] = useState('');
+  const [requestComment, setRequestComment] = useState('');
   const [selectedSpoolIds, setSelectedSpoolIds] = useState([]);
 
   const handleSubmit = (e) => {
@@ -1843,6 +1852,7 @@ function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitReque
       id: `req-${Date.now()}`,
       title: title.trim(),
       makerWorldUrl: makerWorldUrl.trim(),
+      requestComment: requestComment.trim(),
       ownerId: currentUser.id,
       selectedSpoolIds,
       deniedSpoolIds: [],
@@ -1884,6 +1894,16 @@ function PrintRequestModal({ owners, spools, currentUser, onClose, onSubmitReque
               onChange={(e) => setMakerWorldUrl(e.target.value)}
               placeholder="https://makerworld.com/en/models/..."
               className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 block mb-1">Request Comments / Notes (Optional)</label>
+            <textarea
+              value={requestComment}
+              onChange={(e) => setRequestComment(e.target.value)}
+              placeholder="Add any notes or comments about this print job..."
+              className="w-full px-3.5 py-2.5 bg-zinc-950 border border-zinc-700 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 h-20 resize-none"
             />
           </div>
 
